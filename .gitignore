@@ -9,9 +9,6 @@
 .idea
 .vs
 
-# Jupyter and Mathematica notebooks (use a different repository)
-*.ipynb
-*.nb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
