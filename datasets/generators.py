@@ -80,6 +80,32 @@ def make_random_rectangle_batch(N = 1000):
         Hy_ds[i] = Hy
         Ez_ds[i] = Ez
 
+def make_random_ellipse_batch(N = 1000):
+
+    f = h5py.File("datasets/test.hdf5", "a")
+    permittivities, proximities, Hx_ds, Hy_ds, Ez_ds = create_dataset(f, N, "ellipses")
+    prox = get_proximity_matrix()
+
+    for i in pbar(range(N)):
+        p_matrix = np.ones((64, 64))
+        x0, y0 = np.random.randint(16,48,2)
+        rx, ry = np.random.randint(5,32,2)
+
+        # Setup arrays which just list the x and y coordinates
+        x, y = np.meshgrid(np.arange(64), np.arange(64))
+
+        # Calculate the ellipse values all at once
+        ellipse = ((x - x0) / rx) ** 2 + ((y - y0) / ry) ** 2 <= 1
+
+        p_matrix[ellipse < 1.0] = eps_si
+
+        Hx, Hy, Ez = make_simulation(p_matrix)
+        permittivities[i] = p_matrix
+        proximities[i] = prox
+        Hx_ds[i] = Hx
+        Hy_ds[i] = Hy
+        Ez_ds[i] = Ez
+
 
 def load_batch(filename, batchname):
     f = h5py.File(filename)
