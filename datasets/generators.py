@@ -72,6 +72,8 @@ class SimulationData:
                                  for y in range(self.total_grid_size)], dtype=np.float64)[start:end, start:end]
 
 
+
+
 # def make_simulation(permittivities: np.ndarray):
 #     '''
 #     Create a simulation for an embedded 64x64 device permittivity matrix inside a 128x128 vacuum matrix
@@ -124,13 +126,13 @@ def create_dataset(f, N, name, s=GRID_SIZE):
     return dataset
 
 
-def make_batch(permmitivity_generator, name, N=1000):
+def make_batch(permmitivity_generator, name, N=1000, omega=OMEGA_1550 * 2):
     f = h5py.File("datasets/test.hdf5", "a")
     ds = create_dataset(f, N, name)
 
     for i in pbar(range(N)):
         epsilons = permmitivity_generator()
-        sim = SimulationData(epsilons)
+        sim = SimulationData(epsilons, omega=omega)
         sim.solve()
 
         ds["epsilons"][i] = sim.epsilons
