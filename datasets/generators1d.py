@@ -183,7 +183,7 @@ def perm_binary(s=DEVICE_LENGTH, eps=eps_si):
     return epsilons
 
 
-def perm_alternating_layers(s=DEVICE_LENGTH, num_layers=5, eps1=eps_si, eps2=eps_sio2):
+def perm_alternating_layers(s=DEVICE_LENGTH, num_layers=5, eps1=eps_si, eps2=1.0):
     layer_indices = np.random.rand(num_layers)
     layer_indices = np.floor(layer_indices * s / np.sum(layer_indices))
     epsilons = np.ones(s)
@@ -196,7 +196,7 @@ def perm_alternating_layers(s=DEVICE_LENGTH, num_layers=5, eps1=eps_si, eps2=eps
     return epsilons
 
 
-def perm_random_number_alternating_layers(s=DEVICE_LENGTH, num_layers_range=(2, 20), eps1=eps_si, eps2=eps_sio2):
+def perm_random_number_alternating_layers(s=DEVICE_LENGTH, num_layers_range=(2, 10), eps1=eps_si, eps2=1.0):
     num_layers = np.random.randint(num_layers_range[0], num_layers_range[1] + 1)
     return perm_alternating_layers(s, num_layers, eps1=eps1, eps2=eps2)
 
