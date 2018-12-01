@@ -1,4 +1,5 @@
 from tqdm import tqdm, tqdm_notebook
+import numpy as np
 
 N_si = 3.48
 eps_si = N_si**2
@@ -14,6 +15,13 @@ OMEGA_1550 = 1.215e15
 GRID_SIZE = 64
 NPML = 15
 
+OMEGA = OMEGA_1550
+MU0 = 4 * np.pi * 10**-7
+EPSILON0 =  8.854187817620e-12 
+SCALE = 1e-15
+C = 299792458.0
+L0 = 1e-6
+PIXEL_SIZE = 0.05 * L0
 
 def is_notebook():
     '''Tests to see if we are running in a jupyter notebook environment'''
@@ -30,3 +38,4 @@ def is_notebook():
 
 
 pbar = tqdm_notebook if is_notebook() else tqdm
+
