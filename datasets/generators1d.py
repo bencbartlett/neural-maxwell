@@ -1,14 +1,18 @@
 import h5py
 import numpy as np
+import scipy.sparse as sp
 from angler import Simulation
+from angler.derivatives import unpack_derivs
 
-from datasets.settings import OMEGA_1550, eps_si, eps_sio2, pbar
+from datasets.settings import OMEGA_1550, eps_si, eps_sio2, pbar, EPSILON0, MU0
 
 DEVICE_LENGTH = 64
 NPML = 16
 NPML_BUFFER = 32
 TOTAL_LENGTH = DEVICE_LENGTH + 2 * NPML_BUFFER + 2 * NPML
 CLIPPED_LENGTH = TOTAL_LENGTH - 2 * NPML
+
+BUFFER_PERMITTIVITY = -1e20
 
 
 class Simulation1D:
@@ -90,7 +94,6 @@ class Cavity1D:
         perms = np.ones((2, total_length), dtype=np.float64)
 
         # set permittivity and reflection zone
-        BUFFER_PERMITTIVITY = -1e10
         perms[:, :start] = BUFFER_PERMITTIVITY
         perms[:, start:end] = epsilons
         perms[:, end:] = BUFFER_PERMITTIVITY
@@ -99,7 +102,7 @@ class Cavity1D:
             src_x = int(self.device_length / 2)
 
         sim = Simulation(omega, perms, self.dl, [0, self.npml], self.mode, L0=self.L0)
-        sim.src[:, src_x + self.npml + self.cavity_buffer] = 1
+        sim.src[:, src_x + self.npml + self.cavity_buffer] = 1j
 
         clip0 = None# self.npml + self.cavity_buffer
         clip1 = None#-(self.npml + self.cavity_buffer)
@@ -122,6 +125,34 @@ class Cavity1D:
 
         else:
             raise ValueError("Polarization must be Ez or Hz!")
+            
+    def get_operators(self, omega=OMEGA_1550):
+
+        total_length = self.device_length + 2 * self.cavity_buffer + 2 * self.npml
+
+        perms = np.ones(total_length, dtype=np.float64)
+
+        start = self.npml + self.cavity_buffer
+        end = start + self.device_length
+
+        perms[:start] = BUFFER_PERMITTIVITY
+        perms[end:] = BUFFER_PERMITTIVITY
+
+        sim = Simulation(omega, perms, self.dl, [0, self.npml], self.mode, L0=self.L0)
+
+        Dyb, Dxb, Dxf, Dyf = unpack_derivs(sim.derivs)
+
+        N = np.asarray(perms.shape) 
+        M = np.prod(N) 
+
+        vector_eps_z = EPSILON0 * self.L0 * perms.reshape((-1,))
+        T_eps_z = sp.spdiags(vector_eps_z, 0, M, M, format='csr')
+
+        curl_curl = (Dxf@Dxb + Dyf@Dyb)
+
+        other = omega**2 * MU0 * self.L0 * T_eps_z
+
+        return curl_curl.todense(), other.todense()
 
 
 def create_dataset(f, N, name, s=CLIPPED_LENGTH):

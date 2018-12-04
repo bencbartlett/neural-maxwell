@@ -1,9 +1,11 @@
 import h5py
 import numpy as np
+import scipy.sparse as sp
 from angler import Simulation
+from angler.derivatives import unpack_derivs
 
-from datasets.settings import GRID_SIZE, OMEGA_1550, eps_si, pbar
-
+from datasets.settings import GRID_SIZE, OMEGA_1550, eps_si, eps_sio2, pbar, EPSILON0, MU0
+from datasets.generators1d import BUFFER_PERMITTIVITY
 
 class SimulationData:
 
@@ -71,7 +73,96 @@ class SimulationData:
             return 1 / np.array([[1 + (x - x0) ** 2 + (y - y0) ** 2 for x in range(self.total_grid_size)]
                                  for y in range(self.total_grid_size)], dtype=np.float64)[start:end, start:end]
 
+class Cavity2D:
 
+    def __init__(self, mode="Ez", device_length=32, npml=0, cavity_buffer=4, dl=0.05, L0=1e-6):
+        self.mode = mode
+        self.device_length = device_length
+        self.npml = npml
+        self.cavity_buffer = cavity_buffer
+        self.dl = dl
+        self.L0 = L0
+
+    def solve(self, epsilons: np.array, omega=OMEGA_1550, src_x=None, src_y=None):
+
+        total_length = self.device_length + 2 * self.cavity_buffer + 2 * self.npml
+        start = self.npml + self.cavity_buffer
+        end = start + self.device_length
+
+        # need to use two rows to avoid issues with fd-derivative operators
+        perms = np.ones((total_length, total_length), dtype=np.float64)
+
+        # set permittivity and reflection zone
+        perms[:, :start] = BUFFER_PERMITTIVITY
+        perms[:start, :] = BUFFER_PERMITTIVITY
+
+        perms[start:end, start:end] = epsilons
+        
+        perms[:, end:] = BUFFER_PERMITTIVITY
+        perms[end:, :] = BUFFER_PERMITTIVITY
+
+
+        if src_x is None:
+            src_x = total_length // 2
+        if src_y is None:
+            src_y = total_length // 2
+
+        sim = Simulation(omega, perms, self.dl, [self.npml, self.npml], self.mode, L0=self.L0)
+        sim.src[src_y, src_x] = 1j
+
+        clip0 = None# self.npml + self.cavity_buffer
+        clip1 = None#-(self.npml + self.cavity_buffer)
+
+        if self.mode == "Ez":
+            Hx, Hy, Ez = sim.solve_fields()
+            perms = perms[clip0:clip1, clip0:clip1]
+            Hx = Hx[clip0:clip1, clip0:clip1]
+            Hy = Hy[clip0:clip1, clip0:clip1]
+            Ez = Ez[clip0:clip1, clip0:clip1]
+            return perms, src_x, src_y, Hx, Hy, Ez
+
+        elif self.mode == "Hz":
+            Ex, Ey, Hz = sim.solve_fields()
+            perms = perms[clip0:clip1, clip0:clip1]
+            Ex = Ex[clip0:clip1, clip0:clip1]
+            Ey = Ey[clip0:clip1, clip0:clip1]
+            Hz = Hz[clip0:clip1, clip0:clip1]
+            return perms, src_x, src_y, Ex, Ey, Hz
+
+        else:
+            raise ValueError("Polarization must be Ez or Hz!")
+            
+    def get_operators(self, omega=OMEGA_1550):
+
+        total_length = self.device_length + 2 * self.cavity_buffer + 2 * self.npml
+
+        perms = np.ones((total_length, total_length), dtype=np.float64)
+
+        start = self.npml + self.cavity_buffer
+        end = start + self.device_length
+
+        # set permittivity and reflection zone
+        perms[:, :start] = BUFFER_PERMITTIVITY
+        perms[:start, :] = BUFFER_PERMITTIVITY        
+        perms[:, end:] = BUFFER_PERMITTIVITY
+        perms[end:, :] = BUFFER_PERMITTIVITY
+
+
+        sim = Simulation(omega, perms, self.dl, [self.npml, self.npml], self.mode, L0=self.L0)
+
+        Dyb, Dxb, Dxf, Dyf = unpack_derivs(sim.derivs)
+
+        N = np.asarray(perms.shape) 
+        M = np.prod(N) 
+
+        vector_eps_z = EPSILON0 * self.L0 * perms.reshape((-1,))
+        T_eps_z = sp.spdiags(vector_eps_z, 0, M, M, format='csr')
+
+        curl_curl = (Dxf@Dxb + Dyf@Dyb)
+
+        other = omega**2 * MU0 * self.L0 * T_eps_z
+
+        return curl_curl.todense(), other.todense()
 
 
 # def make_simulation(permittivities: np.ndarray):
