@@ -13,9 +13,6 @@ NPML_BUFFER = 32
 TOTAL_LENGTH = DEVICE_LENGTH + 2 * NPML_BUFFER + 2 * NPML
 CLIPPED_LENGTH = TOTAL_LENGTH - 2 * NPML
 
-BUFFER_PERMITTIVITY = -1e20
-
-
 class Simulation1D:
 
     def __init__(self, mode="Ez", device_length=DEVICE_LENGTH, npml=NPML, npml_buffer=NPML_BUFFER, dl=0.05, L0=1e-6):
@@ -77,11 +74,12 @@ class Simulation1D:
 
 class Cavity1D:
 
-    def __init__(self, mode="Ez", device_length=65, npml=0, cavity_buffer=16, dl=0.05, L0=1e-6):
+    def __init__(self, mode="Ez", device_length=65, npml=0, cavity_buffer=16, buffer_permittivity=-1e20, dl=0.05, L0=1e-6):
         self.mode = mode
         self.device_length = device_length
         self.npml = npml
         self.cavity_buffer = cavity_buffer
+        self.buffer_permittivity = buffer_permittivity
         self.dl = dl
         self.L0 = L0
 
@@ -95,9 +93,9 @@ class Cavity1D:
         perms = np.ones((2, total_length), dtype=np.float64)
 
         # set permittivity and reflection zone
-        perms[:, :start] = BUFFER_PERMITTIVITY
+        perms[:, :start] = self.buffer_permittivity
         perms[:, start:end] = epsilons
-        perms[:, end:] = BUFFER_PERMITTIVITY
+        perms[:, end:] = self.buffer_permittivity
 
         if src_x is None:
             src_x = int(self.device_length / 2)
@@ -136,8 +134,8 @@ class Cavity1D:
         start = self.npml + self.cavity_buffer
         end = start + self.device_length
 
-        perms[:start] = BUFFER_PERMITTIVITY
-        perms[end:] = BUFFER_PERMITTIVITY
+        perms[:start] = self.buffer_permittivity
+        perms[end:] = self.buffer_permittivity
 
         sim = Simulation(omega, perms, self.dl, [0, self.npml], self.mode, L0=self.L0)
 
@@ -154,6 +152,24 @@ class Cavity1D:
         other = omega**2 * MU0 * self.L0 * T_eps_z
 
         return curl_curl.todense(), other.todense()
+    
+def get_A_ops_1d(epsilons, npml, omega=OMEGA_1550, dl=0.05, L0=1e-6):
+
+    sim = Simulation(omega, epsilons, dl, [npml, 0], "Ez", L0=L0)
+
+    Dyb, Dxb, Dxf, Dyf = unpack_derivs(sim.derivs)
+
+    N = np.asarray(epsilons.shape) 
+    M = np.prod(N) 
+
+    vector_eps_z = EPSILON0 * L0 * epsilons.reshape((-1,))
+    T_eps_z = sp.spdiags(vector_eps_z, 0, M, M, format='csr')
+
+    curl_curl = (Dxf@Dxb + Dyf@Dyb)
+
+    other = omega**2 * MU0 * L0 * T_eps_z
+
+    return curl_curl.todense(), other.todense()
 
 
 def create_dataset(f, N, name, s=CLIPPED_LENGTH):
@@ -246,6 +262,6 @@ def perm_random_layers(s=DEVICE_LENGTH, num_layers=5, eps_range=(1, 4.5 ** 2)):
     return epsilons
 
 
-def perm_random_number_arandom_layers(s=DEVICE_LENGTH, num_layers_range=(2, 20), eps_range=(1, 4.5 ** 2)):
+def perm_random_number_random_layers(s=DEVICE_LENGTH, num_layers_range=(2, 20), eps_range=(1, 4.5 ** 2)):
     num_layers = np.random.randint(num_layers_range[0], num_layers_range[1] + 1)
     return perm_random_layers(s, num_layers, eps_range=eps_range)
