@@ -4,7 +4,8 @@ import scipy.sparse as sp
 from angler import Simulation
 from angler.derivatives import unpack_derivs
 
-from datasets.settings import OMEGA_1550, eps_si, eps_sio2, pbar, EPSILON0, MU0
+from neural_maxwell.constants import OMEGA_1550, eps_si, EPSILON0, MU0
+from neural_maxwell.utils import pbar
 
 DEVICE_LENGTH = 64
 NPML = 16

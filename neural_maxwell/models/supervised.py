@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
-from datasets.generators1d import *
+from neural_maxwell.datasets.generators1d import *
 
 class Perm1dDataset(Dataset):
     """Dataset for 1D permittivity/field data"""

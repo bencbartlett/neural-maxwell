@@ -4,8 +4,9 @@ import scipy.sparse as sp
 from angler import Simulation
 from angler.derivatives import unpack_derivs
 
-from datasets.settings import GRID_SIZE, OMEGA_1550, eps_si, eps_sio2, pbar, EPSILON0, MU0
-from datasets.generators1d import BUFFER_PERMITTIVITY
+from neural_maxwell.constants import GRID_SIZE, OMEGA_1550, eps_si, EPSILON0, MU0
+from neural_maxwell.utils import pbar
+from neural_maxwell.datasets.generators1d import BUFFER_PERMITTIVITY
 
 class SimulationData:
 
