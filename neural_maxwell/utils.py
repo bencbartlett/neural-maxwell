@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Iterable
 
 import torch
 import torch.nn.functional as F
@@ -21,6 +21,19 @@ def is_notebook():
 
 
 pbar = tqdm_notebook if is_notebook() else tqdm
+
+# def tqdm_train(epochs: int = None, data: Iterable = None, plot=is_notebook()):
+#     epoch_bar = pbar(range(epochs))
+    
+
+# class TqdmTrainer:
+#     '''Progress bar for displaying training progress and stats'''
+#     def __init__(self, epochs: int = None, data: Iterable = None, plot=is_notebook()):
+#         self.epoch_bar = pbar(range(epochs), desc="ℒ = {:.1e}")
+#         self.iteration_bar = pbar(data)
+    
+#     def __iter__(self):
+#         pass
 
 
 def tensor_diff(x, n=1, axis=-1, padding=None, pad_value=0, cyclic=False):

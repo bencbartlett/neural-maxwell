@@ -6,7 +6,6 @@ from angler.derivatives import unpack_derivs
 
 from neural_maxwell.constants import GRID_SIZE, OMEGA_1550, eps_si, EPSILON0, MU0
 from neural_maxwell.utils import pbar
-from neural_maxwell.datasets.generators1d import BUFFER_PERMITTIVITY
 
 class SimulationData:
 
@@ -76,11 +75,12 @@ class SimulationData:
 
 class Cavity2D:
 
-    def __init__(self, mode="Ez", device_length=32, npml=0, cavity_buffer=4, dl=0.05, L0=1e-6):
+    def __init__(self, mode="Ez", device_length=32, npml=0, cavity_buffer=4, buffer_permittivity=-1e20, dl=0.05, L0=1e-6):
         self.mode = mode
         self.device_length = device_length
         self.npml = npml
         self.cavity_buffer = cavity_buffer
+        self.buffer_permittivity = buffer_permittivity
         self.dl = dl
         self.L0 = L0
 
@@ -94,13 +94,13 @@ class Cavity2D:
         perms = np.ones((total_length, total_length), dtype=np.float64)
 
         # set permittivity and reflection zone
-        perms[:, :start] = BUFFER_PERMITTIVITY
-        perms[:start, :] = BUFFER_PERMITTIVITY
+        perms[:, :start] = self.buffer_permittivity
+        perms[:start, :] = self.buffer_permittivity
 
         perms[start:end, start:end] = epsilons
         
-        perms[:, end:] = BUFFER_PERMITTIVITY
-        perms[end:, :] = BUFFER_PERMITTIVITY
+        perms[:, end:] = self.buffer_permittivity
+        perms[end:, :] = self.buffer_permittivity
 
 
         if src_x is None:
@@ -143,10 +143,10 @@ class Cavity2D:
         end = start + self.device_length
 
         # set permittivity and reflection zone
-        perms[:, :start] = BUFFER_PERMITTIVITY
-        perms[:start, :] = BUFFER_PERMITTIVITY        
-        perms[:, end:] = BUFFER_PERMITTIVITY
-        perms[end:, :] = BUFFER_PERMITTIVITY
+        perms[:, :start] = self.buffer_permittivity
+        perms[:start, :] = self.buffer_permittivity        
+        perms[:, end:] = self.buffer_permittivity
+        perms[end:, :] = self.buffer_permittivity
 
 
         sim = Simulation(omega, perms, self.dl, [self.npml, self.npml], self.mode, L0=self.L0)
@@ -165,6 +165,24 @@ class Cavity2D:
 
         return curl_curl.todense(), other.todense()
 
+    
+def get_A_ops_2d(epsilons, npml, omega=OMEGA_1550, dl=0.05, L0=1e-6):
+
+    sim = Simulation(omega, epsilons, dl, [npml, npml], "Ez", L0=L0)
+
+    Dyb, Dxb, Dxf, Dyf = unpack_derivs(sim.derivs)
+
+    N = np.asarray(epsilons.shape) 
+    M = np.prod(N) 
+
+    vector_eps_z = EPSILON0 * L0 * epsilons.reshape((-1,))
+    T_eps_z = sp.spdiags(vector_eps_z, 0, M, M, format='csr')
+
+    curl_curl = (Dxf@Dxb + Dyf@Dyb)
+
+    other = omega**2 * MU0 * L0 * T_eps_z
+
+    return curl_curl.todense(), other.todense()
 
 # def make_simulation(permittivities: np.ndarray):
 #     '''
