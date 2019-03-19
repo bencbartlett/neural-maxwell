@@ -8,6 +8,7 @@
 # Visual studio / PyCharm stuff
 .idea
 .vs
+.vscode
 
 
 # Byte-compiled / optimized / DLL files

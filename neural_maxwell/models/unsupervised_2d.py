@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_maxwell.constants import *
-from neural_maxwell.datasets.generators import Cavity2D
+from neural_maxwell.datasets.fdfd import Cavity2D
 
 
 class MaxwellConv2D(nn.Module):

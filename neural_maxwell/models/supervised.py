@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
-from neural_maxwell.datasets.generators1d import *
+from neural_maxwell.datasets.generators import load_batch
 
 class Perm1dDataset(Dataset):
     """Dataset for 1D permittivity/field data"""
@@ -28,9 +28,9 @@ class Perm1dDataset(Dataset):
     def __getitem__(self, i):
         data = torch.tensor([self.epsilons[i]]).float()
 
-        #         start = (self.input_size - self.output_size) // 2
-        #         end = start + self.output_size
-        #         label = torch.tensor(np.abs(self.Ez[i][start:end, start:end] * self.field_scale)).float()
+        # start = (self.input_size - self.output_size) // 2
+        # end = start + self.output_size
+        # label = torch.tensor(np.abs(self.Ez[i][start:end, start:end] * self.field_scale)).float()
 
         label = torch.tensor([np.abs(self.Ez[i][-1])]).float()
 

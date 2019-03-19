@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from neural_maxwell.datasets.generators1d import load_batch
+from neural_maxwell.datasets.generators import load_batch
 
 
 class Permittivity1dSupervisedDataset(Dataset):
@@ -54,26 +54,26 @@ class PermittivityDataset(Dataset):
             return epsilons
 
 
-class PermittivityLayerDataset(Dataset):
-
-    def __init__(self, layer_generator, N = 10000, size = 64, infinite_mode = False):
-        self.size = size
-        self.layer_generator = layer_generator
-        self.layer_samples = []
-        self.N = N
-        self.infinite_mode = infinite_mode
-
-    def __len__(self):
-        return int(self.N)
-
-    def __getitem__(self, i):
-        if i >= len(self.layer_samples) or self.infinite_mode:
-            sizes, epsilons = self.layer_generator()
-            sizes = torch.tensor(sizes)
-            epsilons = torch.tensor(epsilons)
-            if not self.infinite_mode:
-                self.layer_samples.append((sizes, epsilons))
-            return sizes, epsilons
-        else:
-            sizes, epsilons = self.layer_samples[i]
-            return sizes, epsilons
+# class PermittivityLayerDataset(Dataset):
+#
+#     def __init__(self, layer_generator, N = 10000, size = 64, infinite_mode = False):
+#         self.size = size
+#         self.layer_generator = layer_generator
+#         self.layer_samples = []
+#         self.N = N
+#         self.infinite_mode = infinite_mode
+#
+#     def __len__(self):
+#         return int(self.N)
+#
+#     def __getitem__(self, i):
+#         if i >= len(self.layer_samples) or self.infinite_mode:
+#             sizes, epsilons = self.layer_generator()
+#             sizes = torch.tensor(sizes)
+#             epsilons = torch.tensor(epsilons)
+#             if not self.infinite_mode:
+#                 self.layer_samples.append((sizes, epsilons))
+#             return sizes, epsilons
+#         else:
+#             sizes, epsilons = self.layer_samples[i]
+#             return sizes, epsilons
