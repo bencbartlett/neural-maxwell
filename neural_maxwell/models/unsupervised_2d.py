@@ -44,7 +44,7 @@ class MaxwellConv2D(nn.Module):
         )
 
         # store angler operators
-        curl_op, eps_op = Cavity2D(device_length = self.size, cavity_buffer = self.cavity_buffer).get_operators()
+        curl_op, eps_op = Cavity2D(device_length = self.size, buffer_length = self.cavity_buffer).get_operators()
         self.curl_curl_op = torch.tensor([np.asarray(np.real(curl_op))] * batch_size, device = device).float()
 
     @staticmethod
@@ -81,7 +81,7 @@ class MaxwellConv2D(nn.Module):
         if self.supervised:
             labels = torch.empty_like(fields)
             for i, perm in enumerate(epsilons.detach().numpy()):
-                _, _, _, _, Ez = Cavity2D(cavity_buffer = 16).solve(perm, omega = OMEGA_1550)
+                _, _, _, _, Ez = Cavity2D(buffer_length = 16).solve(perm, omega = OMEGA_1550)
                 labels[i, :] = torch.tensor(np.real(Ez[16:-16])).float()
             return fields - labels
 

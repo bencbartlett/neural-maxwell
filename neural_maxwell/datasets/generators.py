@@ -113,11 +113,11 @@ class PermittivityGenerators1D:
 class PermittivityGenerators2D:
 
     @staticmethod
-    def perm_random(s = GRID_SIZE):
+    def random(s = GRID_SIZE):
         return eps_si * np.random.rand(s, s)
 
     @staticmethod
-    def perm_rectangle(s = GRID_SIZE):
+    def rectangle(s = GRID_SIZE):
         p_matrix = np.ones((s, s))
         x0, y0 = np.random.randint(16, s - 16, 2)
         dx, dy = np.random.randint(5, 16, 2)
@@ -125,7 +125,7 @@ class PermittivityGenerators2D:
         return p_matrix
 
     @staticmethod
-    def perm_ellipse(s = GRID_SIZE):
+    def ellipse(s = GRID_SIZE):
         p_matrix = np.ones((s, s))
         x0, y0 = np.random.randint(16, s - 16, 2)
         rx, ry = np.random.randint(5, 16, 2)

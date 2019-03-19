@@ -94,7 +94,7 @@ class MaxwellConvolutionalMiniNet(nn.Module):
         if self.supervised:
             labels = torch.empty_like(fields)
             for i, perm in enumerate(epsilons.detach().numpy()):
-                _, _, _, _, Ez = Cavity1D(cavity_buffer = 16).solve(perm, omega = OMEGA_1550)
+                _, _, _, _, Ez = Cavity1D(buffer_length = 16).solve(perm, omega = OMEGA_1550)
                 labels[i, :] = torch.tensor(np.imag(Ez[16:-16])).float()
             return fields - labels
 
