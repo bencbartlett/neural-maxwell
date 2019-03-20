@@ -182,20 +182,20 @@ class Simulation2D:
 
         return curl_curl.todense(), other.todense()
 
-    def get_proximity_matrix(self, mode = "inv_squared"):
-        total_grid_size = self.device_length + 2 * self.npml + 2 * self.buffer_length
-        start = self.npml + self.buffer_length
-        end = start + self.device_length
-        x0, y0 = self.source_pos + start
-        if mode == "linear":
-            return np.sqrt([[(x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
-                            for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]
-        if mode == "squared":
-            return np.array([[(x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
-                             for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]
-        if mode == "inv_linear":
-            return 1 / np.sqrt([[1 + (x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
-                                for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]
-        if mode == "inv_squared":
-            return 1 / np.array([[1 + (x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
-                                 for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]
+    # def get_proximity_matrix(self, mode = "inv_squared"):
+    #     total_grid_size = self.device_length + 2 * self.npml + 2 * self.buffer_length
+    #     start = self.npml + self.buffer_length
+    #     end = start + self.device_length
+    #     x0, y0 = self.source_pos + start
+    #     if mode == "linear":
+    #         return np.sqrt([[(x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
+    #                         for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]
+    #     if mode == "squared":
+    #         return np.array([[(x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
+    #                          for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]
+    #     if mode == "inv_linear":
+    #         return 1 / np.sqrt([[1 + (x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
+    #                             for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]
+    #     if mode == "inv_squared":
+    #         return 1 / np.array([[1 + (x - x0) ** 2 + (y - y0) ** 2 for x in range(total_grid_size)]
+    #                              for y in range(total_grid_size)], dtype = np.float64)[start:end, start:end]

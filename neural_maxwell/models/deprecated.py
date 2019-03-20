@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neural_maxwell.constants import *
-from neural_maxwell.datasets.fdfd import Cavity1D
+from neural_maxwell.datasets.fdfd import Simulation1D
 from neural_maxwell.utils import tensor_diff
 
 
@@ -94,7 +94,7 @@ class MaxwellConvolutionalMiniNet(nn.Module):
         if self.supervised:
             labels = torch.empty_like(fields)
             for i, perm in enumerate(epsilons.detach().numpy()):
-                _, _, _, _, Ez = Cavity1D(buffer_length = 16).solve(perm, omega = OMEGA_1550)
+                _, _, _, _, Ez = Simulation1D(buffer_length = 16).solve(perm, omega = OMEGA_1550)
                 labels[i, :] = torch.tensor(np.imag(Ez[16:-16])).float()
             return fields - labels
 
@@ -112,7 +112,7 @@ class MaxwellConvolutionalMiniNet(nn.Module):
             # Compute Maxwell operator on fields
             diffs = tensor_diff(E, n = 2, padding = None)
             curl_curl_E = (SCALE / PIXEL_SIZE ** 2) * torch.cat([zero, diffs, zero], dim = -1)
-            epsilon_E = (SCALE * -OMEGA ** 2 * MU0 * EPSILON0) * eps * E
+            epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * eps * E
 
             # Compute free-current vector
             J = torch.zeros_like(E)
