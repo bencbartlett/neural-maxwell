@@ -1,14 +1,11 @@
 import h5py
 import numpy as np
 
-from neural_maxwell.constants import GRID_SIZE, OMEGA_1550, eps_si
+from neural_maxwell.constants import DEVICE_LENGTH, OMEGA_1550, eps_si, BUFFER_LENGTH, NPML
 from neural_maxwell.datasets.fdfd import Simulation1D
 from neural_maxwell.utils import pbar
 
-DEVICE_LENGTH = 64
-NPML = 16
-NPML_BUFFER = 32
-TOTAL_LENGTH = DEVICE_LENGTH + 2 * NPML_BUFFER + 2 * NPML
+TOTAL_LENGTH = DEVICE_LENGTH + 2 * BUFFER_LENGTH + 2 * NPML
 CLIPPED_LENGTH = TOTAL_LENGTH - 2 * NPML
 
 
@@ -113,11 +110,11 @@ class PermittivityGenerators1D:
 class PermittivityGenerators2D:
 
     @staticmethod
-    def random(s = GRID_SIZE):
+    def random(s = DEVICE_LENGTH):
         return eps_si * np.random.rand(s, s)
 
     @staticmethod
-    def rectangle(s = GRID_SIZE):
+    def rectangle(s = DEVICE_LENGTH):
         p_matrix = np.ones((s, s))
         x0, y0 = np.random.randint(16, s - 16, 2)
         dx, dy = np.random.randint(5, 16, 2)
@@ -125,7 +122,7 @@ class PermittivityGenerators2D:
         return p_matrix
 
     @staticmethod
-    def ellipse(s = GRID_SIZE):
+    def ellipse(s = DEVICE_LENGTH):
         p_matrix = np.ones((s, s))
         x0, y0 = np.random.randint(16, s - 16, 2)
         rx, ry = np.random.randint(5, 16, 2)

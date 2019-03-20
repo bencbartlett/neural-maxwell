@@ -24,7 +24,6 @@ BUFFER_PERMITTIVITY = -1e20  # near infinite permittivity for cavity boundaries
 DEVICE_LENGTH = 64  # length of permittivity region
 NPML = 0  # number of PMLs
 BUFFER_LENGTH = 16  # buffer size before NPML (reflective boundary if using cavity)
-TOTAL_LENGTH = DEVICE_LENGTH + 2 * BUFFER_LENGTH + 2 * NPML  # total simulation size
 SCALE = 1e-15
 L0 = 1e-6
 dL = 0.05

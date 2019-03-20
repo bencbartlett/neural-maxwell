@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from neural_maxwell.constants import DEVICE_LENGTH
 from neural_maxwell.datasets.generators import load_batch
 
 
@@ -33,7 +34,7 @@ class Permittivity1dSupervisedDataset(Dataset):
 
 class PermittivityDataset(Dataset):
 
-    def __init__(self, epsilon_generator, N = 10000, size = 64, infinite_mode = False):
+    def __init__(self, epsilon_generator, N = 10000, size = DEVICE_LENGTH, infinite_mode = False):
         self.size = size
         self.epsilon_generator = epsilon_generator
         self.epsilon_samples = []
