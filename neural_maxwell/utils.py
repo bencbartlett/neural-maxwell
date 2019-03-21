@@ -3,6 +3,7 @@ from typing import Optional, Iterable
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm, tqdm_notebook
+from math import floor
 
 
 def is_notebook():
@@ -84,3 +85,6 @@ def tensor_roll(x: torch.Tensor, shift: int, axis: int = -1, fill_pad: Optional[
         if fill_pad is not None:
             gap = fill_pad * torch.ones_like(gap, device=x.device)
         return torch.cat([gap, x.index_select(axis, torch.arange(shift))], dim=axis)
+
+def conv_output_size(in_size, kernel_size, padding=0, stride=1, dilation=1):
+    return floor((in_size + 2 * padding - dilation * (kernel_size - 1) - 1) / stride + 1)

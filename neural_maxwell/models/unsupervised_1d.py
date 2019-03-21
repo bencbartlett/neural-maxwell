@@ -4,11 +4,11 @@ import torch.nn as nn
 
 from neural_maxwell.constants import *
 from neural_maxwell.datasets.fdfd import Simulation1D, maxwell_residual
-
+from neural_maxwell.utils import conv_output_size
 
 class MaxwellConvV2(nn.Module):
 
-    def __init__(self, size = DEVICE_LENGTH, src_x = 32, drop_p = 0.1):
+    def __init__(self, size = DEVICE_LENGTH, src_x = 32, drop_p = 0.1, channels = None, kernels = None):
         super().__init__()
 
         self.size = size
@@ -17,42 +17,48 @@ class MaxwellConvV2(nn.Module):
         self.total_size = self.size + 2 * self.buffer_length
         self.drop_p = drop_p
 
-        c1, c2, c3 = 32, 64, 128
-        k1, k2, k3 = 5, 7, 9
-
-        self.convnet = nn.Sequential(
-                nn.Conv1d(1, c1, kernel_size = k1, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                nn.Conv1d(c1, c2, kernel_size = k2, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                nn.Conv1d(c2, c3, kernel_size = k3, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p)
-        )
-        out_size = size - (k1 - 1) - (k2 - 1) - (k3 - 1)
-
-        self.densenet = nn.Sequential(
-                nn.Linear(out_size * c3, out_size * c3),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                nn.Linear(out_size * c3, out_size * c3),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-        )
-
-        self.invconvnet = nn.Sequential(
-                nn.ConvTranspose1d(c3, c2, kernel_size = k3, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                nn.ConvTranspose1d(c2, c1, kernel_size = k2, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.ConvTranspose1d(c1, 1, kernel_size = k1, stride = 1, padding = 0),
-        )
-
         curl_op, eps_op = Simulation1D(device_length = self.size, buffer_length = self.buffer_length).get_operators()
         self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
+        
+        if channels is None or kernels is None:
+            channels = [32, 64, 128]
+            kernels = [5, 7, 9]
+        
+        layers = []       
+        in_channels = 1
+        out_size = self.size
+        for out_channels, kernel_size in zip(channels, kernels):
+            layers.append(nn.Conv1d(in_channels, out_channels, kernel_size = kernel_size, stride = 1, padding = 0))
+            layers.append(nn.ReLU())
+            if self.drop_p > 0:
+                layers.append(nn.Dropout(p = self.drop_p))
+            in_channels = out_channels
+            out_size = conv_output_size(out_size, kernel_size)
+
+        self.convnet = nn.Sequential(*layers)
+        
+        self.densenet = nn.Sequential(
+                nn.Linear(out_size * out_channels, out_size * out_channels),
+                nn.ReLU(),
+                nn.Dropout(p = self.drop_p),
+                nn.Linear(out_size * out_channels, out_size * out_channels),
+                nn.ReLU(),
+                nn.Dropout(p = self.drop_p),
+        )
+
+        transpose_layers = []   
+        transpose_channels = [*reversed(channels[1:]), 1]
+        for i, (out_channels, kernel_size) in enumerate(zip(transpose_channels, reversed(kernels))):
+            transpose_layers.append(nn.ConvTranspose1d(in_channels, out_channels, 
+                                                       kernel_size = kernel_size, stride = 1, padding = 0))
+            if i < len(transpose_channels) - 1:
+                transpose_layers.append(nn.ReLU())
+            if self.drop_p > 0:
+                transpose_layers.append(nn.Dropout(p = self.drop_p))
+            in_channels = out_channels
+
+        self.invconvnet = nn.Sequential(*transpose_layers)
+        
 
     def get_fields(self, epsilons):
         batch_size, L = epsilons.shape
@@ -82,10 +88,10 @@ class MaxwellConvV2(nn.Module):
         # Compute free-current vector
         if trim_buffer:
             J = torch.zeros(self.size, 1, device = device)
-            J[self.src_x, 0] = -1.526814027933079
+            J[self.src_x, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
         else:
             J = torch.zeros(self.total_size, 1, device = device)
-            J[self.src_x + self.buffer_length, 0] = -1.526814027933079
+            J[self.src_x + self.buffer_length, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
 
         return residuals - J
 
