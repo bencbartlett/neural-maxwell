@@ -1,14 +1,17 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from neural_maxwell.constants import *
 from neural_maxwell.datasets.fdfd import Simulation1D, maxwell_residual
 from neural_maxwell.utils import conv_output_size
 
+
 class MaxwellConvV2(nn.Module):
 
-    def __init__(self, size = DEVICE_LENGTH, src_x = 32, drop_p = 0.1, channels = None, kernels = None):
+    def __init__(self, size = DEVICE_LENGTH, src_x = 32, channels = None, kernels = None, drop_p = 0.1,
+                 supervised_prob = 0.01):
         super().__init__()
 
         self.size = size
@@ -16,15 +19,17 @@ class MaxwellConvV2(nn.Module):
         self.buffer_length = 4
         self.total_size = self.size + 2 * self.buffer_length
         self.drop_p = drop_p
+        self.supervised_prob = supervised_prob
 
-        curl_op, eps_op = Simulation1D(device_length = self.size, buffer_length = self.buffer_length).get_operators()
+        self.sim = Simulation1D(device_length = self.size, buffer_length = self.buffer_length)
+        curl_op, eps_op = self.sim.get_operators()
         self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
-        
+
         if channels is None or kernels is None:
             channels = [32, 64, 128]
             kernels = [5, 7, 9]
-        
-        layers = []       
+
+        layers = []
         in_channels = 1
         out_size = self.size
         for out_channels, kernel_size in zip(channels, kernels):
@@ -36,29 +41,28 @@ class MaxwellConvV2(nn.Module):
             out_size = conv_output_size(out_size, kernel_size)
 
         self.convnet = nn.Sequential(*layers)
-        
+
         self.densenet = nn.Sequential(
                 nn.Linear(out_size * out_channels, out_size * out_channels),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Dropout(p = self.drop_p),
                 nn.Linear(out_size * out_channels, out_size * out_channels),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Dropout(p = self.drop_p),
         )
 
-        transpose_layers = []   
+        transpose_layers = []
         transpose_channels = [*reversed(channels[1:]), 1]
         for i, (out_channels, kernel_size) in enumerate(zip(transpose_channels, reversed(kernels))):
-            transpose_layers.append(nn.ConvTranspose1d(in_channels, out_channels, 
+            transpose_layers.append(nn.ConvTranspose1d(in_channels, out_channels,
                                                        kernel_size = kernel_size, stride = 1, padding = 0))
             if i < len(transpose_channels) - 1:
-                transpose_layers.append(nn.ReLU())
+                transpose_layers.append(nn.LeakyReLU())
             if self.drop_p > 0:
                 transpose_layers.append(nn.Dropout(p = self.drop_p))
             in_channels = out_channels
 
         self.invconvnet = nn.Sequential(*transpose_layers)
-        
 
     def get_fields(self, epsilons):
         batch_size, L = epsilons.shape
@@ -77,9 +81,7 @@ class MaxwellConvV2(nn.Module):
 
         return out
 
-    def forward(self, epsilons, trim_buffer = True):
-        # Compute Ez fields
-        fields = self.get_fields(epsilons)
+    def forward_unsupervised(self, epsilons, fields, trim_buffer = True):
 
         # Compute Maxwell operator on fields
         residuals = maxwell_residual(fields, epsilons, self.curl_curl_op,
@@ -94,6 +96,34 @@ class MaxwellConvV2(nn.Module):
             J[self.src_x + self.buffer_length, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
 
         return residuals - J
+
+    def forward_supervised(self, epsilons, fields, trim_buffer = True):
+
+        batch_size, _ = epsilons.shape
+
+        fields_true = []
+        epsilons_np = epsilons.detach().cpu().numpy()
+        for eps_np in epsilons_np:
+            _, _, _, _, Ez_true = self.sim.solve(eps_np, src_x = self.src_x)
+            fields_true.append(np.real(Ez_true))
+
+        if trim_buffer:
+            fields_true = fields_true[:, self.buffer_length: -self.buffer_length]
+        else:
+            fields = F.pad(fields, [self.buffer_length] * 2)
+
+        fields_true = torch.tensor(fields_true, device = device)
+
+        return fields_true - fields
+
+    def forward(self, epsilons, trim_buffer = True):
+        # Compute Ez fields
+        fields = self.get_fields(epsilons)
+
+        if np.random.rand() < self.supervised_prob:
+            return self.forward_supervised(epsilons, fields, trim_buffer = trim_buffer)
+        else:
+            return self.forward_unsupervised(epsilons, fields, trim_buffer = trim_buffer)
 
 
 class MaxwellConvComplex(nn.Module):
