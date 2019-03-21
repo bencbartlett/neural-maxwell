@@ -1,61 +1,65 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_maxwell.constants import *
-from neural_maxwell.datasets.fdfd import Simulation2D
+from neural_maxwell.datasets.fdfd import Simulation2D, maxwell_residual_2d
+from neural_maxwell.utils import conv_output_size
 
 
-class MaxwellConv2D(nn.Module):
+class MaxwellSolver2D(nn.Module):
 
-    def __init__(self, size = 32, src_x = 16, batch_size = 50, supervised = False):
+    def __init__(self, size = 32, src_x = 16, src_y = 16, channels = None, kernels = None, drop_p = 0.1):
         super().__init__()
 
         self.size = size
         self.src_x = src_x
-        self.supervised = supervised
-        self.cavity_buffer = 4
-        self.total_size = self.size + 2 * self.cavity_buffer
+        self.src_y = src_y
+        self.buffer_length = 4
+        self.drop_p = drop_p
 
-        self.convnet = nn.Sequential(
-                nn.Conv2d(1, 16, kernel_size = 3, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Conv2d(16, 32, kernel_size = 5, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Conv2d(32, 32, kernel_size = 7, stride = 1, padding = 0),
-                nn.ReLU()
-        )
-        out_size = size - 2 - 4 - 6
+        self.sim = Simulation2D(device_length = self.size, buffer_length = self.buffer_length)
+        curl_op, eps_op = self.sim.get_operators()
+        self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
+
+        if channels is None or kernels is None:
+            channels = [64] * 5
+            kernels = [5] * 5
+
+        layers = []
+        in_channels = 1
+        out_size = self.size
+        for out_channels, kernel_size in zip(channels, kernels):
+            layers.append(nn.Conv2d(in_channels, out_channels, kernel_size = kernel_size, stride = 1, padding = 0))
+            layers.append(nn.ReLU())
+            if self.drop_p > 0:
+                layers.append(nn.Dropout(p = self.drop_p))
+            in_channels = out_channels
+            out_size = conv_output_size(out_size, kernel_size)
+
+        self.convnet = nn.Sequential(*layers)
 
         self.densenet = nn.Sequential(
-                nn.Linear(out_size ** 2 * 32, out_size ** 2 * 32),
-                nn.ReLU(),
-                nn.Linear(out_size ** 2 * 32, out_size ** 2 * 32),
-                nn.ReLU(),
+                nn.Linear(out_size * out_channels, out_size * out_channels),
+                nn.LeakyReLU(),
+                nn.Dropout(p = self.drop_p),
+                nn.Linear(out_size * out_channels, out_size * out_channels),
+                nn.LeakyReLU(),
+                nn.Dropout(p = self.drop_p),
         )
 
-        self.invconvnet = nn.Sequential(
-                nn.ConvTranspose2d(32, 32, kernel_size = 7, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.ConvTranspose2d(32, 16, kernel_size = 5, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.ConvTranspose2d(16, 1, kernel_size = 3, stride = 1, padding = 0),
-        )
-
-        # store angler operators
-        curl_op, eps_op = Simulation2D(device_length = self.size, buffer_length = self.cavity_buffer).get_operators()
-        self.curl_curl_op = torch.tensor([np.asarray(np.real(curl_op))] * batch_size, device = device).float()
-
-    @staticmethod
-    def make_convolutional_mininet(num_input_channels, channels, kernel_sizes):
-        layers = []
-        in_channels = num_input_channels
-        for out_channels, kernel_size in zip(channels, kernel_sizes):
-            layers.append(nn.Conv1d(in_channels, out_channels, kernel_size = kernel_size, stride = 1, padding = 0))
-            layers.append(nn.ReLU())
+        transpose_layers = []
+        transpose_channels = [*reversed(channels[1:]), 1]
+        for i, (out_channels, kernel_size) in enumerate(zip(transpose_channels, reversed(kernels))):
+            transpose_layers.append(nn.ConvTranspose2d(in_channels, out_channels,
+                                                       kernel_size = kernel_size, stride = 1, padding = 0))
+            if i < len(transpose_channels) - 1:
+                transpose_layers.append(nn.LeakyReLU())
+            if self.drop_p > 0:
+                transpose_layers.append(nn.Dropout(p = self.drop_p))
             in_channels = out_channels
-        return nn.Sequential(*layers)
+
+        self.invconvnet = nn.Sequential(*transpose_layers)
 
     def get_fields(self, epsilons):
         batch_size, W, H = epsilons.shape
@@ -74,39 +78,21 @@ class MaxwellConv2D(nn.Module):
 
         return out
 
-    def forward(self, epsilons):
+    def forward(self, epsilons, trim_buffer = True):
         # Compute Ez fields
         fields = self.get_fields(epsilons)
 
-        if self.supervised:
-            labels = torch.empty_like(fields)
-            for i, perm in enumerate(epsilons.detach().numpy()):
-                _, _, _, _, Ez = Simulation2D(buffer_length = 16).solve(perm, omega = OMEGA_1550)
-                labels[i, :] = torch.tensor(np.real(Ez[16:-16])).float()
-            return fields - labels
+        # Compute Maxwell operator on fields
+        residuals = maxwell_residual_2d(fields, epsilons, self.curl_curl_op,
+                                        buffer_length = self.buffer_length, trim_buffer = trim_buffer)
 
+        # Compute free-current vector
+        if trim_buffer:
+            J = torch.zeros(self.size, self.size, device = device)
+            J[self.src_x, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
         else:
-            batch_size, _, _ = epsilons.shape
+            total_size = self.size + 2 * self.buffer_length
+            J = torch.zeros(total_size, total_size, device = device)
+            J[self.src_x + self.buffer_length, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
 
-            # Add zero field amplitudes at edge points for resonator BC's
-            E = F.pad(fields, [self.cavity_buffer] * 4)
-            E = E.view(batch_size, -1, 1)
-
-            # Add first layer of cavity BC's
-            eps = F.pad(epsilons, [self.cavity_buffer] * 4, "constant", -1e20)
-            eps = eps.view(batch_size, -1, 1)
-
-            # Compute Maxwell operator on fields
-            curl_curl_E = (SCALE / L0 ** 2) * torch.bmm(self.curl_curl_op, E).view(batch_size, -1, 1)
-            epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * eps * E
-
-            # Compute free-current vector
-            J = torch.zeros(batch_size, self.total_size, self.total_size, device = device)
-            J[:, self.src_x + self.cavity_buffer, self.src_x + self.cavity_buffer] = -1.526814027933079
-            J = J.view(batch_size, -1, 1)
-
-            out = curl_curl_E - epsilon_E - J
-            out = out.view(batch_size, self.total_size, self.total_size)
-            out = out[:, self.cavity_buffer:-self.cavity_buffer, self.cavity_buffer:-self.cavity_buffer]
-
-            return out
+        return residuals - J

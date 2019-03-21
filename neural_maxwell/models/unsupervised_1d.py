@@ -3,15 +3,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pdb import set_trace as breakpoint
-
-
 from neural_maxwell.constants import *
-from neural_maxwell.datasets.fdfd import Simulation1D, maxwell_residual
+from neural_maxwell.datasets.fdfd import Simulation1D, maxwell_residual_1d
 from neural_maxwell.utils import conv_output_size
 
 
-class MaxwellConvV2(nn.Module):
+class MaxwellSolver1D(nn.Module):
 
     def __init__(self, size = DEVICE_LENGTH, src_x = 32, channels = None, kernels = None, drop_p = 0.1):
         super().__init__()
@@ -19,7 +16,6 @@ class MaxwellConvV2(nn.Module):
         self.size = size
         self.src_x = src_x
         self.buffer_length = 4
-        self.total_size = self.size + 2 * self.buffer_length
         self.drop_p = drop_p
 
         self.sim = Simulation1D(device_length = self.size, buffer_length = self.buffer_length)
@@ -27,8 +23,8 @@ class MaxwellConvV2(nn.Module):
         self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
 
         if channels is None or kernels is None:
-            channels = [32, 64, 128]
-            kernels = [5, 7, 9]
+            channels = [64] * 7
+            kernels = [5] * 7
 
         layers = []
         in_channels = 1
@@ -85,15 +81,15 @@ class MaxwellConvV2(nn.Module):
     def forward_unsupervised(self, epsilons, fields, trim_buffer = True):
 
         # Compute Maxwell operator on fields
-        residuals = maxwell_residual(fields, epsilons, self.curl_curl_op,
-                                     buffer_length = self.buffer_length, trim_buffer = trim_buffer)
+        residuals = maxwell_residual_1d(fields, epsilons, self.curl_curl_op,
+                                        buffer_length = self.buffer_length, trim_buffer = trim_buffer)
 
         # Compute free-current vector
         if trim_buffer:
             J = torch.zeros(self.size, 1, device = device)
             J[self.src_x, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
         else:
-            J = torch.zeros(self.total_size, 1, device = device)
+            J = torch.zeros(self.size + 2 * self.buffer_length, 1, device = device)
             J[self.src_x + self.buffer_length, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
 
         return residuals - J
@@ -108,17 +104,17 @@ class MaxwellConvV2(nn.Module):
             _, _, _, _, Ez_true = self.sim.solve(eps_np, src_x = self.src_x)
             fields_true.append(np.real(Ez_true))
         fields_true = np.array(fields_true)
-        
+
         if trim_buffer:
             fields_true = fields_true[:, self.buffer_length: -self.buffer_length]
         else:
             fields = F.pad(fields, [self.buffer_length] * 2)
 
         fields_true = torch.tensor(fields_true, device = device).float()
-        
+
         return fields_true - fields
 
-    def forward(self, epsilons, supervised=False, trim_buffer = True):
+    def forward(self, epsilons, supervised = False, trim_buffer = True):
         # Compute Ez fields
         fields = self.get_fields(epsilons)
 
@@ -126,126 +122,3 @@ class MaxwellConvV2(nn.Module):
             return self.forward_supervised(epsilons, fields, trim_buffer = trim_buffer)
         else:
             return self.forward_unsupervised(epsilons, fields, trim_buffer = trim_buffer)
-
-
-class MaxwellConvComplex(nn.Module):
-
-    def __init__(self, size = 64, src_x = None, buffer = 16, npml = 16, drop_p = 0.1, polar = False):
-        super().__init__()
-
-        self.size = size
-        self.buffer = buffer
-        self.npml = npml
-        self.src_x = src_x if src_x is not None else self.npml + self.buffer
-        self.total_size = self.npml + 2 * self.buffer + self.size + self.npml
-        self.drop_p = drop_p
-        self.polar = polar
-
-        c1, c2, c3 = 32, 64, 128
-        k1, k2, k3 = 3, 5, 7
-
-        self.convnet = nn.Sequential(
-                nn.Conv1d(1, c1, kernel_size = k1, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                nn.Conv1d(c1, c2, kernel_size = k2, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                nn.Conv1d(c2, c3, kernel_size = k3, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p)
-        )
-        out_size = self.total_size - (k1 - 1) - (k2 - 1) - (k3 - 1)
-
-        self.densenet = nn.Sequential(
-                nn.Linear(out_size * c3, out_size * c3),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                #             nn.Linear(out_size * c3, out_size * c3),
-                #             nn.ReLU(),
-                #             nn.Dropout(p=self.drop_p),
-        )
-
-        self.invconvnet = nn.Sequential(
-                nn.ConvTranspose1d(c3, c2, kernel_size = k3, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.Dropout(p = self.drop_p),
-                nn.ConvTranspose1d(c2, c1, kernel_size = k2, stride = 1, padding = 0),
-                nn.ReLU(),
-                nn.ConvTranspose1d(c1, 2, kernel_size = k1, stride = 1, padding = 0),
-        )
-
-        curl_op, _ = Simulation1D(device_length = self.size, npml = self.npml).get_operators()
-        self.curl_curl_re = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
-        self.curl_curl_im = torch.tensor(np.asarray(np.imag(curl_op)), device = device).float()
-
-    def forward_fields(self, epsilons):
-        batch_size, L = epsilons.shape
-        out = epsilons.view(batch_size, 1, L)
-
-        out = self.convnet(out)
-
-        _, c, l2 = out.shape
-        out = out.view(batch_size, -1)
-        out = self.densenet(out)
-        out = out.view(batch_size, c, l2)
-
-        out = self.invconvnet(out)
-
-        out = out.view(batch_size, 2, L)
-
-        return out
-
-    def get_fields(self, epsilons):
-        # Compute Ez fields
-        fields = self.forward_fields(epsilons)
-
-        # Separate into real and imaginary parts
-        if not self.polar:
-            E_re = fields[:, 0]
-            E_im = fields[:, 1]
-        else:
-            E_abs = fields[:, 0]
-            E_phi = fields[:, 1]
-            E_re = E_abs * torch.cos(E_phi)
-            E_im = E_abs * torch.sin(E_phi)
-
-        return E_re, E_im
-
-    def forward(self, epsilons):
-
-        batch_size, _ = epsilons.shape
-
-        E_re, E_im = self.get_fields(epsilons)
-
-        # Broadcast E and epsilon vectors for matrix multiplication
-        E_re = E_re.view(batch_size, -1, 1)
-        E_im = E_im.view(batch_size, -1, 1)
-        eps = epsilons.view(batch_size, -1, 1)
-
-        # Compute Maxwell operator on fields
-        curl_curl_E_re = (SCALE / L0 ** 2) * (torch.matmul(self.curl_curl_re, E_re)
-                                              - torch.matmul(self.curl_curl_im, E_im))
-        curl_curl_E_im = (SCALE / L0 ** 2) * (torch.matmul(self.curl_curl_im, E_re)
-                                              + torch.matmul(self.curl_curl_re, E_im))
-
-        epsilon_E_re = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * eps * E_re
-        epsilon_E_im = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * eps * E_im
-
-        # Compute free-current vector
-        J_re = torch.zeros(batch_size, self.total_size, 1, device = device)
-        J_im = torch.zeros(batch_size, self.total_size, 1, device = device)
-        J_re[:, self.src_x, 0] = -1.526814027933079  # source is in phase with real part
-
-        out_re = curl_curl_E_re - epsilon_E_re - J_re
-        out_im = curl_curl_E_im - epsilon_E_im - J_im
-
-        CONCAT = True
-        if CONCAT:
-            # output is concatenated real and imaginary part
-            out = torch.cat((out_re, out_im), dim = -1)
-        else:
-            # output is sum of real and imaginary part
-            out = torch.abs(out_re) + torch.abs(out_im)
-
-        return out

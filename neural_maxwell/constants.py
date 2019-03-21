@@ -22,8 +22,9 @@ BUFFER_PERMITTIVITY = -1e20  # near infinite permittivity for cavity boundaries
 
 # Design space size ====================================================================================================
 DEVICE_LENGTH = 64  # length of permittivity region
+DEVICE_LENGTH_2D = 32
 NPML = 0  # number of PMLs
-BUFFER_LENGTH = 16  # buffer size before NPML (reflective boundary if using cavity)
+BUFFER_LENGTH = 4  # buffer size before NPML (reflective boundary if using cavity)
 SCALE = 1e-15
 L0 = 1e-6
 dL = 0.05

@@ -1,15 +1,16 @@
 import h5py
 import numpy as np
 
-from neural_maxwell.constants import DEVICE_LENGTH, OMEGA_1550, eps_si, BUFFER_LENGTH, NPML
+from neural_maxwell.constants import DEVICE_LENGTH, OMEGA_1550, eps_si, BUFFER_LENGTH, NPML, DEVICE_LENGTH_2D
 from neural_maxwell.datasets.fdfd import Simulation1D
 from neural_maxwell.utils import pbar
 
-TOTAL_LENGTH = DEVICE_LENGTH + 2 * BUFFER_LENGTH + 2 * NPML
-CLIPPED_LENGTH = TOTAL_LENGTH - 2 * NPML
+
+# TOTAL_LENGTH = DEVICE_LENGTH + 2 * BUFFER_LENGTH + 2 * NPML
+# CLIPPED_LENGTH = TOTAL_LENGTH - 2 * NPML
 
 
-def create_dataset(f, N, name, s = CLIPPED_LENGTH):
+def create_dataset(f, N, name, s = DEVICE_LENGTH + 2 * BUFFER_LENGTH):
     grp = f.require_group(name)
     epsilons = grp.require_dataset("epsilons", (N, s), dtype = np.float64)
     src = grp.require_dataset("src", (N,), dtype = np.int16)
@@ -110,22 +111,32 @@ class PermittivityGenerators1D:
 class PermittivityGenerators2D:
 
     @staticmethod
-    def random(s = DEVICE_LENGTH):
+    def random(s = DEVICE_LENGTH_2D):
         return eps_si * np.random.rand(s, s)
 
     @staticmethod
-    def rectangle(s = DEVICE_LENGTH):
+    def rectangle(s = DEVICE_LENGTH_2D, min_size = 3, max_size = None):
+        if max_size is None:
+            max_size = s
+        dx = np.random.randint(min_size, max_size)
+        dy = np.random.randint(min_size, max_size)
+        x0 = np.random.randint(0, s - dx)
+        y0 = np.random.randint(0, s - dy)
+
         p_matrix = np.ones((s, s))
-        x0, y0 = np.random.randint(16, s - 16, 2)
-        dx, dy = np.random.randint(5, 16, 2)
         p_matrix[x0:x0 + dx, y0:y0 + dy] = eps_si
         return p_matrix
 
     @staticmethod
-    def ellipse(s = DEVICE_LENGTH):
+    def ellipse(s = DEVICE_LENGTH_2D, min_size = 3, max_size = None):
+        if max_size is None:
+            max_size = s
+        rx = np.random.randint(min_size, max_size)
+        ry = np.random.randint(min_size, max_size)
+        x0 = np.random.randint(rx, s - rx)
+        y0 = np.random.randint(ry, s - ry)
+
         p_matrix = np.ones((s, s))
-        x0, y0 = np.random.randint(16, s - 16, 2)
-        rx, ry = np.random.randint(5, 16, 2)
 
         x, y = np.meshgrid(np.arange(s), np.arange(s))
         ellipse = ((x - x0) / rx) ** 2 + ((y - y0) / ry) ** 2 <= 1

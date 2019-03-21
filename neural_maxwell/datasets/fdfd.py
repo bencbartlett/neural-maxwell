@@ -8,9 +8,9 @@ from angler.derivatives import unpack_derivs
 from neural_maxwell.constants import *
 
 
-def maxwell_residual(fields, epsilons, curl_curl_op,
-                     buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY, 
-                     add_buffer = True, trim_buffer = True):
+def maxwell_residual_1d(fields, epsilons, curl_curl_op,
+                        buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY,
+                        add_buffer = True, trim_buffer = True):
     '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
 
     batch_size, _ = epsilons.shape
@@ -37,10 +37,40 @@ def maxwell_residual(fields, epsilons, curl_curl_op,
         return out
 
 
+def maxwell_residual_2d(fields, epsilons, curl_curl_op,
+                        buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY,
+                        add_buffer = True, trim_buffer = True):
+    '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
+
+    batch_size, W, H = epsilons.shape
+
+    # Add zero field amplitudes at edge points for resonator BC's
+    if add_buffer:
+        fields = F.pad(fields, [buffer_length] * 4)
+    fields = fields.view(batch_size, -1, 1)
+
+    # Add first layer of cavity BC's
+    if add_buffer:
+        epsilons = F.pad(epsilons, [buffer_length] * 4, "constant", buffer_permittivity)
+    epsilons = epsilons.view(batch_size, -1, 1)
+
+    # Compute Maxwell operator on fields
+    curl_curl_E = (SCALE / L0 ** 2) * torch.bmm(curl_curl_op, fields).view(batch_size, -1, 1)
+    epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * epsilons * fields
+
+    out = curl_curl_E - epsilon_E
+    out = out.view(batch_size, W, H)
+
+    if trim_buffer:
+        return out[:, buffer_length:-buffer_length, buffer_length:-buffer_length]
+    else:
+        return out
+
+
 class Simulation1D:
     '''FDFD simulation of a 1-dimensional system'''
 
-    def __init__(self, mode = "Ez", device_length = DEVICE_LENGTH, npml = 0, buffer_length = 16,
+    def __init__(self, mode = "Ez", device_length = DEVICE_LENGTH, npml = 0, buffer_length = BUFFER_LENGTH,
                  buffer_permittivity = BUFFER_PERMITTIVITY, dl = dL, l0 = L0):
         self.mode = mode
         self.device_length = device_length
@@ -50,7 +80,7 @@ class Simulation1D:
         self.dl = dl
         self.L0 = l0
 
-    def solve(self, epsilons: np.array, omega = OMEGA_1550, src_x = None):
+    def solve(self, epsilons: np.array, omega = OMEGA_1550, src_x = None, clip_buffers = False):
 
         total_length = self.device_length + 2 * self.buffer_length + 2 * self.npml
         start = self.npml + self.buffer_length
@@ -69,8 +99,12 @@ class Simulation1D:
         sim = Simulation(omega, permittivities, self.dl, [self.npml, 0], self.mode, L0 = self.L0)
         sim.src[src_x + self.npml + self.buffer_length] = 1j
 
-        clip0 = None  # self.npml + self.buffer_length
-        clip1 = None  # -(self.npml + self.buffer_length)
+        if clip_buffers:
+            clip0 = self.npml + self.buffer_length
+            clip1 = -(self.npml + self.buffer_length)
+        else:
+            clip0 = None
+            clip1 = None
 
         if self.mode == "Ez":
             Hx, Hy, Ez = sim.solve_fields()
@@ -123,60 +157,64 @@ class Simulation1D:
 class Simulation2D:
     '''FDFD simulation of a 2-dimensional  system'''
 
-    def __init__(self, mode = "Ez", device_length = 32, npml = 0, buffer_length = 4,
-                 buffer_permittivity = BUFFER_PERMITTIVITY, dl = dL, L0 = L0):
+    def __init__(self, mode = "Ez", device_length = DEVICE_LENGTH_2D, npml = 0, buffer_length = BUFFER_LENGTH,
+                 buffer_permittivity = BUFFER_PERMITTIVITY, dl = dL, l0 = L0):
         self.mode = mode
         self.device_length = device_length
         self.npml = npml
         self.buffer_length = buffer_length
         self.buffer_permittivity = buffer_permittivity
         self.dl = dl
-        self.L0 = L0
+        self.L0 = l0
 
-    def solve(self, epsilons: np.array, omega = OMEGA_1550, src_x = None, src_y = None):
+    def solve(self, epsilons: np.array, omega = OMEGA_1550, src_x = None, src_y = None, clip_buffers = False):
 
         total_length = self.device_length + 2 * self.buffer_length + 2 * self.npml
         start = self.npml + self.buffer_length
         end = start + self.device_length
 
         # need to use two rows to avoid issues with fd-derivative operators
-        perms = np.ones((total_length, total_length), dtype = np.float64)
+        permittivities = np.ones((total_length, total_length), dtype = np.float64)
 
         # set permittivity and reflection zone
-        perms[:, :start] = self.buffer_permittivity
-        perms[:start, :] = self.buffer_permittivity
+        permittivities[:, :start] = self.buffer_permittivity
+        permittivities[:start, :] = self.buffer_permittivity
 
-        perms[start:end, start:end] = epsilons
+        permittivities[start:end, start:end] = epsilons
 
-        perms[:, end:] = self.buffer_permittivity
-        perms[end:, :] = self.buffer_permittivity
+        permittivities[:, end:] = self.buffer_permittivity
+        permittivities[end:, :] = self.buffer_permittivity
 
         if src_x is None:
             src_x = total_length // 2
         if src_y is None:
             src_y = total_length // 2
 
-        sim = Simulation(omega, perms, self.dl, [self.npml, self.npml], self.mode, L0 = self.L0)
-        sim.src[src_y, src_x] = 1j
+        sim = Simulation(omega, permittivities, self.dl, [self.npml, self.npml], self.mode, L0 = self.L0)
+        sim.src[src_y + self.npml + self.buffer_length, src_x + self.npml + self.buffer_length] = 1j
 
-        clip0 = None  # self.npml + self.buffer_length
-        clip1 = None  # -(self.npml + self.buffer_length)
+        if clip_buffers:
+            clip0 = self.npml + self.buffer_length
+            clip1 = -(self.npml + self.buffer_length)
+        else:
+            clip0 = None
+            clip1 = None
 
         if self.mode == "Ez":
             Hx, Hy, Ez = sim.solve_fields()
-            perms = perms[clip0:clip1, clip0:clip1]
+            permittivities = permittivities[clip0:clip1, clip0:clip1]
             Hx = Hx[clip0:clip1, clip0:clip1]
             Hy = Hy[clip0:clip1, clip0:clip1]
             Ez = Ez[clip0:clip1, clip0:clip1]
-            return perms, src_x, src_y, Hx, Hy, Ez
+            return permittivities, src_x, src_y, Hx, Hy, Ez
 
         elif self.mode == "Hz":
             Ex, Ey, Hz = sim.solve_fields()
-            perms = perms[clip0:clip1, clip0:clip1]
+            permittivities = permittivities[clip0:clip1, clip0:clip1]
             Ex = Ex[clip0:clip1, clip0:clip1]
             Ey = Ey[clip0:clip1, clip0:clip1]
             Hz = Hz[clip0:clip1, clip0:clip1]
-            return perms, src_x, src_y, Ex, Ey, Hz
+            return permittivities, src_x, src_y, Ex, Ey, Hz
 
         else:
             raise ValueError("Polarization must be Ez or Hz!")
