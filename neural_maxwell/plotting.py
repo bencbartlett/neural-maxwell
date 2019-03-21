@@ -9,7 +9,7 @@ from time import time
 from neural_maxwell.datasets.fdfd import Simulation1D
 from neural_maxwell.constants import *
 
-def plot_model_outputs(model, epsilons, figsize=(18,12), criterion=nn.MSELoss()):
+def plot_model_outputs(model, epsilons, figsize=(18,12), criterion=nn.MSELoss(), rescale=True):
     
     size = model.size
     buffer_length = model.buffer_length
@@ -27,8 +27,9 @@ def plot_model_outputs(model, epsilons, figsize=(18,12), criterion=nn.MSELoss())
     network_time = time() - start
     
     Ez_pred = fields[0].detach().cpu().numpy()
-    scale_ratio = np.mean(np.abs(Ez_true)) / np.mean(np.abs(Ez_pred))
-    Ez_pred *= scale_ratio
+    if rescale:
+        scale_ratio = np.mean(np.abs(Ez_true)) / np.mean(np.abs(Ez_pred))
+        Ez_pred *= scale_ratio
     
     outputs = model(eps_tensor)
     

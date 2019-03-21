@@ -10,18 +10,18 @@ from neural_maxwell.constants import *
 
 def maxwell_residual(fields, epsilons, curl_curl_op,
                      buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY, 
-                     add_padding = True, trim_buffer = True):
+                     add_buffer = True, trim_buffer = True):
     '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
 
     batch_size, _ = epsilons.shape
 
     # Add zero field amplitudes at edge points for resonator BC's
-    if add_padding:
+    if add_buffer:
         fields = F.pad(fields, [buffer_length] * 2)
     fields = fields.view(batch_size, -1, 1)
 
     # Add first layer of cavity BC's
-    if add_padding:
+    if add_buffer:
         epsilons = F.pad(epsilons, [buffer_length] * 2, "constant", buffer_permittivity)
     epsilons = epsilons.view(batch_size, -1, 1)
 

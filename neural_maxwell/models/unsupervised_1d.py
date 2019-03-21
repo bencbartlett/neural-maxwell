@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from pdb import set_trace as breakpoint
+
+
 from neural_maxwell.constants import *
 from neural_maxwell.datasets.fdfd import Simulation1D, maxwell_residual
 from neural_maxwell.utils import conv_output_size
@@ -10,8 +13,7 @@ from neural_maxwell.utils import conv_output_size
 
 class MaxwellConvV2(nn.Module):
 
-    def __init__(self, size = DEVICE_LENGTH, src_x = 32, channels = None, kernels = None, drop_p = 0.1,
-                 supervised_prob = 0.01):
+    def __init__(self, size = DEVICE_LENGTH, src_x = 32, channels = None, kernels = None, drop_p = 0.1):
         super().__init__()
 
         self.size = size
@@ -19,7 +21,6 @@ class MaxwellConvV2(nn.Module):
         self.buffer_length = 4
         self.total_size = self.size + 2 * self.buffer_length
         self.drop_p = drop_p
-        self.supervised_prob = supervised_prob
 
         self.sim = Simulation1D(device_length = self.size, buffer_length = self.buffer_length)
         curl_op, eps_op = self.sim.get_operators()
@@ -106,21 +107,22 @@ class MaxwellConvV2(nn.Module):
         for eps_np in epsilons_np:
             _, _, _, _, Ez_true = self.sim.solve(eps_np, src_x = self.src_x)
             fields_true.append(np.real(Ez_true))
-
+        fields_true = np.array(fields_true)
+        
         if trim_buffer:
             fields_true = fields_true[:, self.buffer_length: -self.buffer_length]
         else:
             fields = F.pad(fields, [self.buffer_length] * 2)
 
-        fields_true = torch.tensor(fields_true, device = device)
-
+        fields_true = torch.tensor(fields_true, device = device).float()
+        
         return fields_true - fields
 
-    def forward(self, epsilons, trim_buffer = True):
+    def forward(self, epsilons, supervised=False, trim_buffer = True):
         # Compute Ez fields
         fields = self.get_fields(epsilons)
 
-        if np.random.rand() < self.supervised_prob:
+        if supervised:
             return self.forward_supervised(epsilons, fields, trim_buffer = trim_buffer)
         else:
             return self.forward_unsupervised(epsilons, fields, trim_buffer = trim_buffer)
