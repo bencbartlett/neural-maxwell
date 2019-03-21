@@ -1,15 +1,14 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from neural_maxwell.constants import *
-from neural_maxwell.datasets.fdfd import Simulation1D
+from neural_maxwell.datasets.fdfd import Simulation1D, maxwell_residual
 
 
 class MaxwellConvV2(nn.Module):
 
-    def __init__(self, size = 64, src_x = 32, drop_p = 0.1):
+    def __init__(self, size = DEVICE_LENGTH, src_x = 32, drop_p = 0.1):
         super().__init__()
 
         self.size = size
@@ -72,31 +71,23 @@ class MaxwellConvV2(nn.Module):
 
         return out
 
-    def forward(self, epsilons):
+    def forward(self, epsilons, trim_buffer = True):
         # Compute Ez fields
         fields = self.get_fields(epsilons)
 
-        batch_size, _ = epsilons.shape
-
-        # Add zero field amplitudes at edge points for resonator BC's
-        E = F.pad(fields, [self.buffer_length] * 2)
-        E = E.view(batch_size, -1, 1)
-
-        # Add first layer of cavity BC's
-        eps = F.pad(epsilons, [self.buffer_length] * 2, "constant", -1e20)
-        eps = eps.view(batch_size, -1, 1)
-
         # Compute Maxwell operator on fields
-        curl_curl_E = (SCALE / L0 ** 2) * torch.matmul(self.curl_curl_op, E).view(batch_size, -1, 1)
-        epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * eps * E
+        residuals = maxwell_residual(fields, epsilons, self.curl_curl_op,
+                                     buffer_length = self.buffer_length, trim_buffer = trim_buffer)
 
         # Compute free-current vector
-        J = torch.zeros(batch_size, self.total_size, 1, device = device)
-        J[:, self.src_x + self.buffer_length, 0] = -1.526814027933079
+        if trim_buffer:
+            J = torch.zeros(self.size, 1, device = device)
+            J[self.src_x, 0] = -1.526814027933079
+        else:
+            J = torch.zeros(self.total_size, 1, device = device)
+            J[self.src_x + self.buffer_length, 0] = -1.526814027933079
 
-        out = curl_curl_E - epsilon_E - J
-
-        return out[:, self.buffer_length:-self.buffer_length]
+        return residuals - J
 
 
 class MaxwellConvComplex(nn.Module):

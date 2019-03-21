@@ -1,10 +1,37 @@
 import numpy as np
 import scipy.sparse as sp
+import torch
+import torch.nn.functional as F
 from angler import Simulation
 from angler.derivatives import unpack_derivs
 
-from neural_maxwell.constants import DEVICE_LENGTH, OMEGA_1550, EPSILON0, MU0, dL, L0, \
-    BUFFER_PERMITTIVITY
+from neural_maxwell.constants import *
+
+
+def maxwell_residual(fields, epsilons, curl_curl_op,
+                     buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY, trim_buffer = True):
+    '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
+
+    batch_size, _ = epsilons.shape
+
+    # Add zero field amplitudes at edge points for resonator BC's
+    E = F.pad(fields, [buffer_length] * 2)
+    E = E.view(batch_size, -1, 1)
+
+    # Add first layer of cavity BC's
+    eps = F.pad(epsilons, [buffer_length] * 2, "constant", buffer_permittivity)
+    eps = eps.view(batch_size, -1, 1)
+
+    # Compute Maxwell operator on fields
+    curl_curl_E = (SCALE / L0 ** 2) * torch.matmul(curl_curl_op, E).view(batch_size, -1, 1)
+    epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * eps * E
+
+    out = curl_curl_E - epsilon_E
+
+    if trim_buffer:
+        return out[:, buffer_length:-buffer_length]
+    else:
+        return out
 
 
 class Simulation1D:
