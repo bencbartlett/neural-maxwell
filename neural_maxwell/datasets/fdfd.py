@@ -31,7 +31,7 @@ def maxwell_residual_1d(fields, epsilons, curl_curl_op,
 
     out = curl_curl_E - epsilon_E
 
-    if trim_buffer:
+    if trim_buffer and buffer_length > 0:
         return out[:, buffer_length:-buffer_length]
     else:
         return out
@@ -47,6 +47,8 @@ def maxwell_residual_2d(fields, epsilons, curl_curl_op,
     # Add zero field amplitudes at edge points for resonator BC's
     if add_buffer:
         fields = F.pad(fields, [buffer_length] * 4)
+        W += 2 * buffer_length
+        H += 2 * buffer_length
     fields = fields.view(batch_size, -1, 1)
 
     # Add first layer of cavity BC's
@@ -55,13 +57,13 @@ def maxwell_residual_2d(fields, epsilons, curl_curl_op,
     epsilons = epsilons.view(batch_size, -1, 1)
 
     # Compute Maxwell operator on fields
-    curl_curl_E = (SCALE / L0 ** 2) * torch.bmm(curl_curl_op, fields).view(batch_size, -1, 1)
+    curl_curl_E = (SCALE / L0 ** 2) * torch.matmul(curl_curl_op, fields).view(batch_size, -1, 1)
     epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * epsilons * fields
 
     out = curl_curl_E - epsilon_E
     out = out.view(batch_size, W, H)
 
-    if trim_buffer:
+    if trim_buffer and buffer_length > 0:
         return out[:, buffer_length:-buffer_length, buffer_length:-buffer_length]
     else:
         return out
@@ -186,9 +188,9 @@ class Simulation2D:
         permittivities[end:, :] = self.buffer_permittivity
 
         if src_x is None:
-            src_x = total_length // 2
+            src_x = self.device_length // 2
         if src_y is None:
-            src_y = total_length // 2
+            src_y = self.device_length // 2
 
         sim = Simulation(omega, permittivities, self.dl, [self.npml, self.npml], self.mode, L0 = self.L0)
         sim.src[src_y + self.npml + self.buffer_length, src_x + self.npml + self.buffer_length] = 1j

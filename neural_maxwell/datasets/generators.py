@@ -130,7 +130,7 @@ class PermittivityGenerators2D:
     @staticmethod
     def ellipse(s = DEVICE_LENGTH_2D, min_size = 3, max_size = None):
         if max_size is None:
-            max_size = s
+            max_size = s // 2
         rx = np.random.randint(min_size, max_size)
         ry = np.random.randint(min_size, max_size)
         x0 = np.random.randint(rx, s - rx)

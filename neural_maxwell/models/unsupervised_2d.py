@@ -9,13 +9,13 @@ from neural_maxwell.utils import conv_output_size
 
 class MaxwellSolver2D(nn.Module):
 
-    def __init__(self, size = 32, src_x = 16, src_y = 16, channels = None, kernels = None, drop_p = 0.1):
+    def __init__(self, size = 32, buffer_length=4, src_x = 16, src_y = 16, channels = None, kernels = None, drop_p = 0.1):
         super().__init__()
 
         self.size = size
         self.src_x = src_x
         self.src_y = src_y
-        self.buffer_length = 4
+        self.buffer_length = buffer_length
         self.drop_p = drop_p
 
         self.sim = Simulation2D(device_length = self.size, buffer_length = self.buffer_length)
@@ -23,8 +23,8 @@ class MaxwellSolver2D(nn.Module):
         self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
 
         if channels is None or kernels is None:
-            channels = [64] * 5
-            kernels = [5] * 5
+            channels = [64] * 7
+            kernels = [5] * 7
 
         layers = []
         in_channels = 1
@@ -40,10 +40,10 @@ class MaxwellSolver2D(nn.Module):
         self.convnet = nn.Sequential(*layers)
 
         self.densenet = nn.Sequential(
-                nn.Linear(out_size * out_channels, out_size * out_channels),
+                nn.Linear(out_size**2 * out_channels, out_size**2 * out_channels),
                 nn.LeakyReLU(),
                 nn.Dropout(p = self.drop_p),
-                nn.Linear(out_size * out_channels, out_size * out_channels),
+                nn.Linear(out_size**2 * out_channels, out_size**2 * out_channels),
                 nn.LeakyReLU(),
                 nn.Dropout(p = self.drop_p),
         )
@@ -89,10 +89,10 @@ class MaxwellSolver2D(nn.Module):
         # Compute free-current vector
         if trim_buffer:
             J = torch.zeros(self.size, self.size, device = device)
-            J[self.src_x, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
+            J[self.src_y, self.src_x] = -(SCALE / L0) * MU0 * OMEGA_1550
         else:
             total_size = self.size + 2 * self.buffer_length
             J = torch.zeros(total_size, total_size, device = device)
-            J[self.src_x + self.buffer_length, 0] = -(SCALE / L0) * MU0 * OMEGA_1550
+            J[self.src_y + self.buffer_length, self.src_x + self.buffer_length] = -(SCALE / L0) * MU0 * OMEGA_1550
 
         return residuals - J
