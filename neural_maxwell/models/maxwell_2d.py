@@ -9,18 +9,21 @@ from neural_maxwell.utils import conv_output_size
 
 class MaxwellSolver2D(nn.Module):
 
-    def __init__(self, size = 32, buffer_length=4, src_x = 16, src_y = 16, channels = None, kernels = None, drop_p = 0.1):
+    def __init__(self, size = 32, buffer_length=4, buffer_permittivity = BUFFER_PERMITTIVITY, npml = 0, src_x = 16, src_y = 16, channels = None, kernels = None, drop_p = 0.1):
         super().__init__()
 
         self.size = size
         self.src_x = src_x
         self.src_y = src_y
         self.buffer_length = buffer_length
+        self.buffer_permittivity = buffer_permittivity
         self.drop_p = drop_p
 
-        self.sim = Simulation2D(device_length = self.size, buffer_length = self.buffer_length)
+        self.sim = Simulation2D(device_length = self.size, buffer_length = self.buffer_length, buffer_permittivity=self.buffer_permittivity)
         curl_op, eps_op = self.sim.get_operators()
-        self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
+#         self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
+        self.curl_curl_re = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
+        self.curl_curl_im = torch.tensor(np.asarray(np.imag(curl_op)), device = device).float()
 
         if channels is None or kernels is None:
             channels = [64] * 7

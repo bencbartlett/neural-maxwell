@@ -1,5 +1,6 @@
+import numpy as np
 import tensorflow as tf
-from tensorflow.python.keras.layers import Conv2D, Conv2DTranspose, LeakyReLU, Dropout, Dense
+from tensorflow.python.keras.layers import Conv2D, Conv2DTranspose, LeakyReLU, Dropout, Dense, Flatten
 
 from neural_maxwell.constants import *
 from neural_maxwell.datasets.fdfd import Simulation2D, maxwell_residual_2d_tf
@@ -21,7 +22,7 @@ class MaxwellSolverPML2D(tf.keras.Model):
 
         self.sim = Simulation2D(device_length = self.size, npml = self.npml, buffer_length = self.buffer_length)
         curl_curl_op, eps_op = self.sim.get_operators()
-        self.curl_curl_op = tf.convert_to_tensor(curl_curl_op, dtype = tf.complex64)
+        self.curl_curl_op = tf.convert_to_tensor(np.asarray(curl_curl_op), dtype = tf.complex64)
 
         if channels is None or kernels is None:
             channels = [64] * 7
@@ -30,7 +31,7 @@ class MaxwellSolverPML2D(tf.keras.Model):
         layers = []
         out_size = self.size
         for out_channels, kernel_size in zip(channels, kernels):
-            layers.append(Conv2D(out_channels, kernel_size = kernel_size, padding = 'valid'))
+            layers.append(Conv2D(out_channels, kernel_size = kernel_size, padding = 'valid', data_format="channels_first"))
             layers.append(LeakyReLU())
             if self.drop_p > 0:
                 layers.append(Dropout(self.drop_p))
@@ -39,6 +40,7 @@ class MaxwellSolverPML2D(tf.keras.Model):
         self.convnet = tf.keras.Sequential(layers)
 
         self.densenet = tf.keras.Sequential([
+            Flatten(),
             Dense(out_size ** 2 * out_channels),
             LeakyReLU(),
             # Dropout(self.drop_p),
@@ -50,7 +52,7 @@ class MaxwellSolverPML2D(tf.keras.Model):
         transpose_layers = []
         transpose_channels = [*reversed(channels[1:]), 1]
         for i, (out_channels, kernel_size) in enumerate(zip(transpose_channels, reversed(kernels))):
-            transpose_layers.append(Conv2DTranspose(out_channels, kernel_size = kernel_size, stride = 1, padding = 0))
+            transpose_layers.append(Conv2DTranspose(out_channels, kernel_size = kernel_size, padding = 'valid', data_format="channels_first"))
             if i < len(transpose_channels) - 1:
                 transpose_layers.append(LeakyReLU())
             if self.drop_p > 0:
@@ -59,24 +61,24 @@ class MaxwellSolverPML2D(tf.keras.Model):
         self.invconvnet = tf.keras.Sequential(transpose_layers)
 
     def get_fields(self, epsilons):
-        batch_size, W, H = epsilons.shape
-        out = tf.reshape(epsilons, (batch_size, 1, W, H))
+        _, W, H = epsilons.shape.as_list()
+        out = tf.reshape(epsilons, (-1, 1, W, H))
 
         out = self.convnet(out)
-        _, c, w2, h2 = out.shape
+        _, c, w2, h2 = out.shape.as_list()
 
-        out = tf.reshape(out, (batch_size, -1))
         out = self.densenet(out)
 
-        out = tf.reshape(out, (batch_size, c, w2, h2))
+        out = tf.reshape(out, (-1, c, w2, h2))
         out = self.invconvnet(out)
 
-        out = tf.reshape(out, (batch_size, W, H))
+        out = tf.reshape(out, (-1, W, H))
 
         return out
 
     def call(self, epsilons, trim_buffer = False):
 
+        epsilons = tf.complex(epsilons, tf.zeros_like(epsilons))
         # Compute Ez fields
         fields = self.get_fields(epsilons)
 
@@ -86,11 +88,11 @@ class MaxwellSolverPML2D(tf.keras.Model):
 
         # Compute free-current vector
         if trim_buffer:
-            J = tf.zeros((self.size, self.size), dtype = tf.complex128)
+            J = tf.zeros((self.size, self.size), dtype = tf.complex64)
             J[self.src_y, self.src_x] = -(SCALE / L0) * MU0 * OMEGA_1550
         else:
             total_size = self.size + 2 * self.buffer_length
-            J = tf.zeros((total_size, total_size), dtype = tf.complex128)
+            J = tf.zeros((total_size, total_size), dtype = tf.complex64)
             J[self.src_y + self.buffer_length, self.src_x + self.buffer_length] = -(SCALE / L0) * MU0 * OMEGA_1550
 
         return residuals - J

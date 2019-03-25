@@ -75,28 +75,29 @@ def maxwell_residual_2d_tf(fields, epsilons, curl_curl_op,
                            add_buffer = True, trim_buffer = True):
     '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
 
-    batch_size, W, H = epsilons.shape
+    _, W, H = epsilons.shape.as_list()
+    dim = tf.reduce_prod(tf.shape(epsilons)[1:])
 
     # Add zero field amplitudes at edge points for resonator BC's
     if add_buffer:
-        fields = tf.pad(fields, [buffer_length, buffer_length] * 2, mode = "CONSTANT")
+        fields = tf.pad(fields, [[0,0]] + [[buffer_length, buffer_length]] * 2, mode = "CONSTANT")
         W += 2 * buffer_length
         H += 2 * buffer_length
-    fields = tf.reshape(fields, (batch_size, -1, 1))
+    fields = tf.reshape(fields, (-1, dim))
 
     # Add first layer of cavity BC's
     if add_buffer:
-        epsilons = tf.pad(epsilons, [buffer_length, buffer_length] * 2, mode = "CONSTANT",
+        epsilons = tf.pad(epsilons, [[0,0]] + [[buffer_length, buffer_length]] * 2, mode = "CONSTANT",
                           constant_values = buffer_permittivity)
-    epsilons = tf.reshape(epsilons, (batch_size, -1, 1))
+    epsilons = tf.reshape(epsilons, (-1, dim))
 
     # Compute Maxwell operator on fields
     curl_curl_E = (SCALE / L0 ** 2) * tf.matmul(curl_curl_op, fields)
-    curl_curl_E = tf.reshape(curl_curl_E, (batch_size, -1, 1))
+    curl_curl_E = tf.reshape(curl_curl_E, (-1, dim))
     epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * epsilons * fields
 
     out = curl_curl_E - epsilon_E
-    out = tf.reshape(out, (batch_size, W, H))
+    out = tf.reshape(out, (-1, W, H))
 
     if trim_buffer and buffer_length > 0:
         return out[:, buffer_length:-buffer_length, buffer_length:-buffer_length]

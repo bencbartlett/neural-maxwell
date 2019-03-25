@@ -10,15 +10,17 @@ from neural_maxwell.utils import conv_output_size
 
 class MaxwellSolver1D(nn.Module):
 
-    def __init__(self, size = DEVICE_LENGTH, src_x = 32, channels = None, kernels = None, drop_p = 0.1):
+    def __init__(self, size = DEVICE_LENGTH, src_x = 32, buffer_length = 4, buffer_permittivity = BUFFER_PERMITTIVITY, npml = 0, channels = None, kernels = None, drop_p = 0.1):
         super().__init__()
 
         self.size = size
         self.src_x = src_x
-        self.buffer_length = 4
+        self.buffer_length = buffer_length
+        self.buffer_permittivity = buffer_permittivity
+        self.npml = npml
         self.drop_p = drop_p
 
-        self.sim = Simulation1D(device_length = self.size, buffer_length = self.buffer_length)
+        self.sim = Simulation1D(device_length = self.size, buffer_length = self.buffer_length, npml = self.npml, buffer_permittivity = self.buffer_permittivity)
         curl_op, eps_op = self.sim.get_operators()
         self.curl_curl_op = torch.tensor(np.asarray(np.real(curl_op)), device = device).float()
 
