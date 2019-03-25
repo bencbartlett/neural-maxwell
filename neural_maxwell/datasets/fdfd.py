@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse as sp
+import tensorflow as tf
 import torch
 import torch.nn.functional as F
 from angler import Simulation
@@ -69,11 +70,45 @@ def maxwell_residual_2d(fields, epsilons, curl_curl_op,
         return out
 
 
+def maxwell_residual_2d_tf(fields, epsilons, curl_curl_op,
+                           buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY,
+                           add_buffer = True, trim_buffer = True):
+    '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
+
+    batch_size, W, H = epsilons.shape
+
+    # Add zero field amplitudes at edge points for resonator BC's
+    if add_buffer:
+        fields = tf.pad(fields, [buffer_length, buffer_length] * 2, mode = "CONSTANT")
+        W += 2 * buffer_length
+        H += 2 * buffer_length
+    fields = tf.reshape(fields, (batch_size, -1, 1))
+
+    # Add first layer of cavity BC's
+    if add_buffer:
+        epsilons = tf.pad(epsilons, [buffer_length, buffer_length] * 2, mode = "CONSTANT",
+                          constant_values = buffer_permittivity)
+    epsilons = tf.reshape(epsilons, (batch_size, -1, 1))
+
+    # Compute Maxwell operator on fields
+    curl_curl_E = (SCALE / L0 ** 2) * tf.matmul(curl_curl_op, fields)
+    curl_curl_E = tf.reshape(curl_curl_E, (batch_size, -1, 1))
+    epsilon_E = (SCALE * -OMEGA_1550 ** 2 * MU0 * EPSILON0) * epsilons * fields
+
+    out = curl_curl_E - epsilon_E
+    out = tf.reshape(out, (batch_size, W, H))
+
+    if trim_buffer and buffer_length > 0:
+        return out[:, buffer_length:-buffer_length, buffer_length:-buffer_length]
+    else:
+        return out
+
+
 class Simulation1D:
     '''FDFD simulation of a 1-dimensional system'''
 
     def __init__(self, mode = "Ez", device_length = DEVICE_LENGTH, npml = 0, buffer_length = BUFFER_LENGTH,
-                 buffer_permittivity = BUFFER_PERMITTIVITY, dl = dL, l0 = L0):
+                 buffer_permittivity = BUFFER_PERMITTIVITY, dl = dL, l0 = L0, use_dirichlet_bcs = False):
         self.mode = mode
         self.device_length = device_length
         self.npml = npml
@@ -81,6 +116,7 @@ class Simulation1D:
         self.buffer_permittivity = buffer_permittivity
         self.dl = dl
         self.L0 = l0
+        self.use_dirichlet_bcs = use_dirichlet_bcs
 
     def solve(self, epsilons: np.array, omega = OMEGA_1550, src_x = None, clip_buffers = False):
 
@@ -98,7 +134,8 @@ class Simulation1D:
         if src_x is None:
             src_x = int(self.device_length / 2)
 
-        sim = Simulation(omega, permittivities, self.dl, [self.npml, 0], self.mode, L0 = self.L0)
+        sim = Simulation(omega, permittivities, self.dl, [self.npml, 0], self.mode, L0 = self.L0,
+                         use_dirichlet_bcs = self.use_dirichlet_bcs)
         sim.src[src_x + self.npml + self.buffer_length] = 1j
 
         if clip_buffers:
@@ -139,7 +176,8 @@ class Simulation1D:
         perms[:start] = self.buffer_permittivity
         perms[end:] = self.buffer_permittivity
 
-        sim = Simulation(omega, perms, self.dl, [self.npml, 0], self.mode, L0 = self.L0)
+        sim = Simulation(omega, perms, self.dl, [self.npml, 0], self.mode, L0 = self.L0,
+                         use_dirichlet_bcs = self.use_dirichlet_bcs)
 
         Dyb, Dxb, Dxf, Dyf = unpack_derivs(sim.derivs)
 
@@ -160,7 +198,7 @@ class Simulation2D:
     '''FDFD simulation of a 2-dimensional  system'''
 
     def __init__(self, mode = "Ez", device_length = DEVICE_LENGTH_2D, npml = 0, buffer_length = BUFFER_LENGTH,
-                 buffer_permittivity = BUFFER_PERMITTIVITY, dl = dL, l0 = L0):
+                 buffer_permittivity = BUFFER_PERMITTIVITY, dl = dL, l0 = L0, use_dirichlet_bcs = False):
         self.mode = mode
         self.device_length = device_length
         self.npml = npml
@@ -168,6 +206,7 @@ class Simulation2D:
         self.buffer_permittivity = buffer_permittivity
         self.dl = dl
         self.L0 = l0
+        self.use_dirichlet_bcs = use_dirichlet_bcs
 
     def solve(self, epsilons: np.array, omega = OMEGA_1550, src_x = None, src_y = None, clip_buffers = False):
 
@@ -192,7 +231,8 @@ class Simulation2D:
         if src_y is None:
             src_y = self.device_length // 2
 
-        sim = Simulation(omega, permittivities, self.dl, [self.npml, self.npml], self.mode, L0 = self.L0)
+        sim = Simulation(omega, permittivities, self.dl, [self.npml, self.npml], self.mode, L0 = self.L0,
+                         use_dirichlet_bcs = self.use_dirichlet_bcs)
         sim.src[src_y + self.npml + self.buffer_length, src_x + self.npml + self.buffer_length] = 1j
 
         if clip_buffers:
@@ -236,7 +276,8 @@ class Simulation2D:
         perms[:, end:] = self.buffer_permittivity
         perms[end:, :] = self.buffer_permittivity
 
-        sim = Simulation(omega, perms, self.dl, [self.npml, self.npml], self.mode, L0 = self.L0)
+        sim = Simulation(omega, perms, self.dl, [self.npml, self.npml], self.mode, L0 = self.L0,
+                         use_dirichlet_bcs = self.use_dirichlet_bcs)
 
         Dyb, Dxb, Dxf, Dyf = unpack_derivs(sim.derivs)
 

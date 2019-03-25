@@ -31,7 +31,7 @@ class MaxwellSolver1D(nn.Module):
         out_size = self.size
         for out_channels, kernel_size in zip(channels, kernels):
             layers.append(nn.Conv1d(in_channels, out_channels, kernel_size = kernel_size, stride = 1, padding = 0))
-            layers.append(nn.ReLU())
+            layers.append(nn.LeakyReLU())
             if self.drop_p > 0:
                 layers.append(nn.Dropout(p = self.drop_p))
             in_channels = out_channels
