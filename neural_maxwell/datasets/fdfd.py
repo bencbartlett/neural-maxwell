@@ -9,7 +9,7 @@ from angler.derivatives import unpack_derivs
 from neural_maxwell.constants import *
 
 
-def maxwell_residual_1d(fields, epsilons, curl_curl_op,
+def maxwell_residual_1d(fields, epsilons, curl_curl_op,npml=NPML,
                         buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY,
                         add_buffer = True, trim_buffer = True):
     '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
@@ -18,12 +18,12 @@ def maxwell_residual_1d(fields, epsilons, curl_curl_op,
 
     # Add zero field amplitudes at edge points for resonator BC's
     if add_buffer:
-        fields = F.pad(fields, [buffer_length] * 2)
+        fields = F.pad(fields, [buffer_length+npml] * 2)
     fields = fields.view(batch_size, -1, 1)
 
     # Add first layer of cavity BC's
     if add_buffer:
-        epsilons = F.pad(epsilons, [buffer_length] * 2, "constant", buffer_permittivity)
+        epsilons = F.pad(epsilons, [buffer_length+npml] * 2, "constant", buffer_permittivity)
     epsilons = epsilons.view(batch_size, -1, 1)
 
     # Compute Maxwell operator on fields
@@ -33,12 +33,13 @@ def maxwell_residual_1d(fields, epsilons, curl_curl_op,
     out = curl_curl_E - epsilon_E
 
     if trim_buffer and buffer_length > 0:
-        return out[:, buffer_length:-buffer_length]
+        clip = buffer_length+npml
+        return out[:, clip:-clip]
     else:
         return out
 
 
-def maxwell_residual_2d(fields, epsilons, curl_curl_op,
+def maxwell_residual_2d(fields, epsilons, curl_curl_op,npml=NPML,
                         buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY,
                         add_buffer = True, trim_buffer = True):
     '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
@@ -47,14 +48,14 @@ def maxwell_residual_2d(fields, epsilons, curl_curl_op,
 
     # Add zero field amplitudes at edge points for resonator BC's
     if add_buffer:
-        fields = F.pad(fields, [buffer_length] * 4)
-        W += 2 * buffer_length
-        H += 2 * buffer_length
+        fields = F.pad(fields, [buffer_length+npml] * 4)
+        W += 2 * (buffer_length+npml)
+        H += 2 * (buffer_length+npml)
     fields = fields.view(batch_size, -1, 1)
 
     # Add first layer of cavity BC's
     if add_buffer:
-        epsilons = F.pad(epsilons, [buffer_length] * 4, "constant", buffer_permittivity)
+        epsilons = F.pad(epsilons, [buffer_length+npml] * 4, "constant", buffer_permittivity)
     epsilons = epsilons.view(batch_size, -1, 1)
 
     # Compute Maxwell operator on fields
@@ -65,12 +66,13 @@ def maxwell_residual_2d(fields, epsilons, curl_curl_op,
     out = out.view(batch_size, W, H)
 
     if trim_buffer and buffer_length > 0:
-        return out[:, buffer_length:-buffer_length, buffer_length:-buffer_length]
+        clip = buffer_length+npml
+        return out[:, clip:-clip, clip:-clip]
     else:
         return out
 
 
-def maxwell_residual_2d_complex(fields_re, fields_im, epsilons, curl_curl_re, curl_curl_im,
+def maxwell_residual_2d_complex(fields_re, fields_im, epsilons, curl_curl_re, curl_curl_im, npml=NPML,
                                 buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY,
                                 add_buffer = True, trim_buffer = True):
     '''Compute ∇×∇×E - omega^2 mu0 epsilon E in the complex case'''
@@ -79,16 +81,16 @@ def maxwell_residual_2d_complex(fields_re, fields_im, epsilons, curl_curl_re, cu
 
     # Add zero field amplitudes at edge points for resonator BC's
     if add_buffer:
-        fields_re = F.pad(fields_re, [buffer_length] * 4)
-        fields_im = F.pad(fields_im, [buffer_length] * 4)
-        W += 2 * buffer_length
-        H += 2 * buffer_length
+        fields_re = F.pad(fields_re, [buffer_length+npml] * 4)
+        fields_im = F.pad(fields_im, [buffer_length+npml] * 4)
+        W += 2 * (buffer_length + npml)
+        H += 2 * (buffer_length + npml)
     fields_re = fields_re.view(batch_size, -1, 1)
     fields_im = fields_im.view(batch_size, -1, 1)
 
     # Add first layer of cavity BC's
     if add_buffer:
-        epsilons = F.pad(epsilons, [buffer_length] * 4, "constant", buffer_permittivity)
+        epsilons = F.pad(epsilons, [buffer_length+npml] * 4, "constant", buffer_permittivity)
     epsilons = epsilons.view(batch_size, -1, 1)
 
     # Compute Maxwell operator on fields
@@ -107,8 +109,9 @@ def maxwell_residual_2d_complex(fields_re, fields_im, epsilons, curl_curl_re, cu
     out_im = out_im.view(batch_size, W, H)
 
     if trim_buffer and buffer_length > 0:
-        return out_re[:, buffer_length:-buffer_length, buffer_length:-buffer_length], \
-               out_im[:, buffer_length:-buffer_length, buffer_length:-buffer_length]
+        clip = buffer_length+npml
+        return out_re[:, clip:-clip, clip:-clip], \
+               out_im[:, clip:-clip, clip:-clip]
     else:
         return out_re, out_im
 
