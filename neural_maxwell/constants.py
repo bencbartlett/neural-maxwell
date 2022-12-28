@@ -25,9 +25,9 @@ DEVICE_LENGTH = 64  # length of permittivity region
 DEVICE_LENGTH_2D = 32
 NPML = 0  # number of PMLs
 BUFFER_LENGTH = 4  # buffer size before NPML (reflective boundary if using cavity)
-SCALE = 1e-15
-L0 = 1e-6
-dL = 0.05
+SCALE = 1e-15 # 这个参数可能只是为了把omega中的e15缩放下来，不影响结果
+L0 = 1e-6 # 长度参数，Simulations库中所有的长度单位都以L0为单位
+dL = 0.05 # Simulations中网格间距，实际距离是dL*L0
 PIXEL_SIZE = dL * L0
 
 # Device configuration =================================================================================================

@@ -39,12 +39,14 @@ def maxwell_residual_1d(fields, epsilons, curl_curl_op,npml=NPML,
         return out
 
 
-def maxwell_residual_2d(fields, epsilons, curl_curl_op,npml=NPML,
+def maxwell_residual_2d(fields, epsilons, curl_curl_op,npml=NPML, 
                         buffer_length = BUFFER_LENGTH, buffer_permittivity = BUFFER_PERMITTIVITY,
                         add_buffer = True, trim_buffer = True):
+    # nplm 是绝对吸收层的数量，电磁波传输到这里会被完全吸收
+    # buffer_length 在场区的边缘添加一点点区域，然后将这里的介电系数设置为buffer_permittivity（通常取较大的值），这样可以近似认为电磁波在这里被吸收了
     '''Compute ∇×∇×E - omega^2 mu0 epsilon E'''
 
-    batch_size, W, H = epsilons.shape
+    batch_size, W, H = epsilons.shape # 二维场区的宽和高，加batchsize，构成一个三维张量
 
     # Add zero field amplitudes at edge points for resonator BC's
     if add_buffer:
